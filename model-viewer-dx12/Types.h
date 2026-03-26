@@ -79,6 +79,7 @@ namespace ModelViewer {
 		float	playingSpeed = 1.;
 		bool	isPlaying = true;
 		bool	isLooping = true;
+		bool	showBindPose = false;
 		std::vector<std::string> animationNames;
 	};
 };

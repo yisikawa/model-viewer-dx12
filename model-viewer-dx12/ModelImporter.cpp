@@ -140,6 +140,7 @@ ModelViewer::AnimState ModelImporter::GetDefaultAnimState() {
 	animState.isPlaying = true;
 	animState.playingTime = 0.f;
 	animState.playingSpeed = 1.f;
+	animState.showBindPose = false;
 
 	return animState;
 }
@@ -180,15 +181,15 @@ void ModelImporter::UpdateBoneMatrices(float deltaTime, ModelViewer::AnimState &
 	animState.playingTime = mAnimCurrentTicks / mAnimTicksPerSecond;
 	animState.currentAnimDuration = mAnimDurationTicks / mAnimTicksPerSecond;
 	
-	UpdateBoneMatrices_internal(scene->mRootNode, scene->mRootNode->mTransformation);
+	UpdateBoneMatrices_internal(scene->mRootNode, scene->mRootNode->mTransformation, animState);
 }
 
-void ModelImporter::UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4& parentTransform) {
+void ModelImporter::UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4& parentTransform, const ModelViewer::AnimState& animState) {
 	std::string nodeName = pNode->mName.C_Str();
 	aiMatrix4x4 nodeTransform = pNode->mTransformation;
 	// このノードに対応するアニメーションチャンネルがあれば補間行列を取得
 	const aiNodeAnim* pNodeAnim = node_anim_map[nodeName];
-	if (pNodeAnim) {
+	if (pNodeAnim && !animState.showBindPose) {
 		nodeTransform = InterpolateTransform(pNodeAnim, mAnimCurrentTicks);
 	}
 
@@ -206,7 +207,7 @@ void ModelImporter::UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4
 	}
 
 	for (unsigned int i = 0; i < pNode->mNumChildren; ++i) {
-		UpdateBoneMatrices_internal(pNode->mChildren[i], globalTransform);
+		UpdateBoneMatrices_internal(pNode->mChildren[i], globalTransform, animState);
 	}
 }
 

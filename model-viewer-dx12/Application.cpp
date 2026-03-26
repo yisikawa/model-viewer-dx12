@@ -1,3 +1,4 @@
+// Application implementation
 #include "Application.h"
 #include "WindowManager.h"
 #include "Renderer/DX12GraphicsDevice.h"
@@ -333,6 +334,7 @@ void Application::DrawImGui() {
 	ImGui::Begin("Animation Settings");
 	ImGui::Checkbox("Use GPU Skinning", &m_useGpuSkinning);
 	ImGui::Checkbox("Is Playing", &m_animState.isPlaying);
+	ImGui::Checkbox("Show Bind Pose", &m_animState.showBindPose);
 	ImGui::SliderFloat("Playing Time", &m_animState.playingTime, 0.f, m_animState.currentAnimDuration);
 	if (m_animState.sceneAnimCount > 0) {
 		if (ImGui::BeginCombo("Selected Animation", m_animState.animationNames[m_animState.currentAnimIdx].c_str())) {

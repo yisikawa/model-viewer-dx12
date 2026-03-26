@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -23,7 +23,7 @@ private:
 		auto idx = path.rfind(L'.');
 		return path.substr(idx + 1, path.length() - idx - 1);
 	}
-	void UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4& parentTransform);
+	void UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4& parentTransform, const ModelViewer::AnimState& animState);
 	static aiMatrix4x4 InterpolateTransform(const aiNodeAnim* pNodeAnim, float animationTime);
 
 	Assimp::Importer importer;
