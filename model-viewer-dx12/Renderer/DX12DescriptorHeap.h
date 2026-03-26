@@ -1,27 +1,30 @@
-#pragma once
+ï»¿#pragma once
 #include "../Common.h"
 #include "DX12ConstantBuffer.h"
 #include "DX12ShaderResource.h"
 
-// bufferŒn‚Íinterface‚ğ“¯‚¶‚É‚µ‚½‚¢
+// bufferç³»ã¯interfaceã‚’åŒã˜ã«ã—ãŸã„
 class TDX12DescriptorHeap {
 public:
 	TDX12DescriptorHeap() = delete;
 	explicit TDX12DescriptorHeap(ID3D12Device* pDev);
 	D3D12_GPU_DESCRIPTOR_HANDLE AddCBV(ID3D12Device* pDev, ID3D12Resource* pBuffer);
 	D3D12_GPU_DESCRIPTOR_HANDLE AddSRV(ID3D12Device* pDev, ID3D12Resource* pBuffer, DXGI_FORMAT shaderResourceFormat);
+	D3D12_GPU_DESCRIPTOR_HANDLE AddSRV(ID3D12Device* pDev, ID3D12Resource* pBuffer, UINT numElements, UINT stride);
+	D3D12_GPU_DESCRIPTOR_HANDLE AddUAV(ID3D12Device* pDev, ID3D12Resource* pBuffer, UINT numElements, UINT stride);
 	void AllocDynamic(D3D12_CPU_DESCRIPTOR_HANDLE* cpuDescHandle, D3D12_GPU_DESCRIPTOR_HANDLE* gpuDescHandle);
 	void FreeDynamic(D3D12_CPU_DESCRIPTOR_HANDLE cpuDescHandle, D3D12_GPU_DESCRIPTOR_HANDLE gpuDescHandle);
+	void Reset(size_t keepCount);
 
 	ID3D12DescriptorHeap* Get() {
 		return m_descriptorHeap.Get();
 	}
 
 	ID3D12DescriptorHeap* const* GetAddressOf() {
-		return m_descriptorHeap.GetAddressOf(); // –³—‚â‚è‚Â‚È‚°‚é‚½‚ßAíœ—\’è
+		return m_descriptorHeap.GetAddressOf(); // ç„¡ç†ã‚„ã‚Šã¤ãªã’ã‚‹ãŸã‚ã€å‰Šé™¤äºˆå®š
 	}
 	D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandleForHeapStart() {
-		return m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(); // “¯ã
+		return m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(); // åŒä¸Š
 	}
 	size_t numResources = 0;
 

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="ソース ファイル">
@@ -28,6 +28,12 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="WindowManager.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\DX12GraphicsDevice.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Model.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="Renderer\DX12PipelineState.cpp">
@@ -78,6 +84,12 @@
       <Filter>ソース ファイル</Filter>
     </ClInclude>
     <ClInclude Include="WindowManager.h">
+      <Filter>ソース ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\DX12GraphicsDevice.h">
+      <Filter>ソース ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Model.h">
       <Filter>ソース ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Renderer\DX12PipelineState.h">

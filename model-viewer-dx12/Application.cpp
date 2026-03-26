@@ -1,18 +1,27 @@
+ï»¿
+#pragma warning(disable: 4819)
+#pragma warning(disable: 26827)
+
 #include "Application.h"
+#include "Renderer/Model.h"
 #include "Renderer/Shader.h"
 #include "Renderer/DX12RootSignature.h"
 #include "Renderer/DX12DescriptorHeap.h"
 #include "Renderer/DX12ConstantBuffer.h"
 #include "Renderer/DX12ShaderResource.h"
+#include <shobjidl.h>
+#include <iostream>
+#include <algorithm>
+#include <iterator>
 
 using namespace ModelViewer;
 
 static constexpr int APP_NUM_FRAMES_IN_FLIGHT = 2;
-TDX12DescriptorHeap* Application::g_resourceDescriptorHeapWrapper = nullptr;
+std::unique_ptr<TDX12DescriptorHeap> Application::g_resourceDescriptorHeapWrapper = nullptr;
 
-// @brief	ƒRƒ“ƒ\[ƒ‹‚ÉƒtƒH[ƒ}ƒbƒg•t‚«•¶š—ñ‚ğ•\¦
-// @param	format ƒtƒH[ƒ}ƒbƒg %d or %f etc
-// @param	‰Â•Ï’·ˆø”
+// @brief	ã‚³ãƒ³ã‚½ãƒ¼ãƒ«ã«ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆä»˜ãæ–‡å­—åˆ—ã‚’è¡¨ç¤º
+// @param	format ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆ %d or %f etc
+// @param	å¯å¤‰é•·å¼•æ•°
 // @remarks	for debug
 void DebugOutput(const char* format, ...) {
 #ifdef _DEBUG
@@ -55,97 +64,18 @@ void Application::CheckError(LPCSTR msg, HRESULT result) {
 	}
 }
 
-void Application::CreateDevice() {
-#ifdef _DEBUG
-	CheckError("CreateDXGIFactory2", CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(_dxgiFactory.ReleaseAndGetAddressOf())));
-#else
-	CheckError("CreateDXGIFactory1", CreateDXGIFactory1(IID_PPV_ARGS(&_dxgiFactory)));
-#endif
-	// CreateDevice‚Ì‘æˆêˆø”(adapter)‚ªnullptr‚¾‚ÆA—\Šú‚µ‚½ƒOƒ‰ƒtƒBƒbƒNƒXƒ{[ƒh‚ª‘I‚Î‚ê‚é‚Æ‚ÍŒÀ‚ç‚È‚¢B
-	IDXGIAdapter* adapter = nullptr;
-	for (int i = 0; _dxgiFactory->EnumAdapters(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
-		DXGI_ADAPTER_DESC adesc = {};
-		adapter->GetDesc(&adesc);
-		std::wstring strDesc = adesc.Description;
-		// my gpu NVIDIA
-		if (strDesc.find(L"NVIDIA") != std::string::npos) {
-			// ‚±‚±‚ÅstrDesc‚ğprint‚µ‚½‚ç‚Ç‚¤‚¢‚¤‚à‚Ì‚ª•\¦‚³‚ê‚é‚Ì‚©
-			break;
-		}
-	}
-#if 1
-	for (D3D_FEATURE_LEVEL level : {D3D_FEATURE_LEVEL_12_1, D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0}) {
-		if (D3D12CreateDevice(adapter, level, IID_PPV_ARGS(_dev.ReleaseAndGetAddressOf())) == S_OK) {
-			break;
-		}
-	}
-#else
-	// Warp device‚Á‚Ä‚È‚ñ‚¾‚ë‚¤
-	IDXGIAdapter* warp;
-	_dxgiFactory->EnumWarpAdapter(IID_PPV_ARGS(&warp));
-
-	if (warp)
-	{
-		D3D12CreateDevice(warp, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(_dev.ReleaseAndGetAddressOf()));
-		warp->Release();
-	}
-#endif
-}
-
-void Application::CreateCommandList(D3D12_COMMAND_LIST_TYPE CommandListType) {
-	// ƒAƒƒP[ƒ^[‚ª–{‘ÌAƒCƒ“ƒ^[ƒtƒFƒCƒXEƒRƒ}ƒ“ƒhƒŠƒXƒg‚ªƒAƒƒP[ƒ^[‚Ôpush_back‚³‚ê‚Ä‚¢‚­ƒCƒ[ƒW
-	CheckError("Generate CommandAllocaror", _dev->CreateCommandAllocator(CommandListType, IID_PPV_ARGS(_cmdAllocator.ReleaseAndGetAddressOf())));
-	CheckError("Generate CommandList", _dev->CreateCommandList(0, CommandListType, _cmdAllocator.Get(), nullptr, IID_PPV_ARGS(_cmdList.ReleaseAndGetAddressOf())));
-	// ƒRƒ}ƒ“ƒhƒLƒ…[@‚½‚ß‚½‚±‚Ü‚ñ‚Ç‚è‚·‚Æ‚ğÀs‰Â”\‚ÉAGPU‚Å’€ŸÀs
-	D3D12_COMMAND_QUEUE_DESC cmdQueueDesc = {};
-	cmdQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;//ƒ^ƒCƒ€ƒAƒEƒg‚È‚µ
-	cmdQueueDesc.NodeMask = 0; // adapter”‚ª1‚Ì‚Í0‚Å‚¢‚¢H
-	cmdQueueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL; //ƒvƒ‰ƒCƒIƒŠƒeƒB“Á‚Éw’è‚È‚µ
-	cmdQueueDesc.Type = CommandListType;
-	CheckError("CreateCommandQueue", _dev->CreateCommandQueue(&cmdQueueDesc, IID_PPV_ARGS(_cmdQueue.ReleaseAndGetAddressOf())));
-}
-
-void Application::CreateSwapChain() {
-	DXGI_SWAP_CHAIN_DESC1 swapchainDesc = {};
-	swapchainDesc.Width = windowManager->GetWidth();
-	swapchainDesc.Height = windowManager->GetHeight();
-	swapchainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	swapchainDesc.Stereo = false;
-	swapchainDesc.SampleDesc.Count = 1;
-	swapchainDesc.SampleDesc.Quality = 0;
-	swapchainDesc.BufferUsage = DXGI_USAGE_BACK_BUFFER;
-	swapchainDesc.BufferCount = 2;
-	swapchainDesc.Scaling = DXGI_SCALING_STRETCH;
-	swapchainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-	swapchainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-	swapchainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-	CheckError("CreateSwapChain", _dxgiFactory->CreateSwapChainForHwnd(_cmdQueue.Get(), windowManager->GetHandle(), &swapchainDesc, nullptr, nullptr, (IDXGISwapChain1**)_swapchain.ReleaseAndGetAddressOf()));
-
-	// ƒXƒƒbƒvƒ`ƒF[ƒ“: ƒoƒbƒNƒoƒbƒtƒ@‚Íˆê‰ƒeƒNƒXƒ`ƒƒ‚È‚Ç‚»‚Ì‘¼ƒf[ƒ^‚Æ“¯‚¶‚­VRAMã‚ÉŠm•Û‚³‚ê‚éB
-	// vsync‚Æ‚©FX‚ ‚é‚¯‚ÇAXVƒ^ƒCƒ~ƒ“ƒO‚ÅƒXƒƒbƒvƒ`ƒF[ƒ“‚ªƒoƒbƒtƒ@‚ğ“ü‚ê‘Ö‚¦Aæ‚Ù‚Ç‚Ü‚Å•`‚«‚ñ‚Å‚¢‚½ƒoƒbƒNƒoƒbƒtƒ@‚ªƒfƒBƒXƒvƒŒƒCã‚Å‘–¸‚³‚êA‰f‘œ‚Æ‚È‚éB
-	D3D12_CPU_DESCRIPTOR_HANDLE handle = _rtvHeap->GetCPUDescriptorHandleForHeapStart();
-	D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-	for (UINT i = 0; i < 2; ++i) {
-		CheckError("GetBackBuffer", _swapchain->GetBuffer(i, IID_PPV_ARGS(g_pRenderTargets[i].ReleaseAndGetAddressOf())));
-		_dev->CreateRenderTargetView(g_pRenderTargets[i].Get(), &rtvDesc, handle);
-		handle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-	}
-
-}
 
 void Application::CreateDepthStencilView() {
-	//[“xƒoƒbƒtƒ@‚Ìd—l
+	//æ·±åº¦ãƒãƒƒãƒ•ã‚¡ã®ä»•æ§˜
 	D3D12_RESOURCE_DESC depthResDesc = {};
 	depthResDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	depthResDesc.Width = windowManager->GetWidth();
 	depthResDesc.Height = windowManager->GetHeight();
-	depthResDesc.DepthOrArraySize = 1; // ƒeƒNƒXƒ`ƒƒ”z—ñ‚Å‚à‚È‚¢‚µ3DƒeƒNƒXƒ`ƒƒ‚Å‚à‚È‚¢
-	// depthResDesc.Format = DXGI_FORMAT_D32_FLOAT;//[“x’l‘‚«‚İ—pƒtƒH[ƒ}ƒbƒg
-	depthResDesc.Format = DXGI_FORMAT_R32_TYPELESS; // ƒoƒbƒtƒ@‚Ìƒrƒbƒg”‚Í32‚¾‚¯‚Çˆµ‚¢•û‚ÍView‘¤‚ªŒˆ‚ß‚Ä‚æ‚¢
-	depthResDesc.SampleDesc.Count = 1;// ƒTƒ“ƒvƒ‹‚Í1ƒsƒNƒZƒ‹“–‚½‚è1‚Â
-	depthResDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;//‚±‚Ìƒoƒbƒtƒ@‚Í[“xƒXƒeƒ“ƒVƒ‹
+	depthResDesc.DepthOrArraySize = 1; // ãƒ†ã‚¯ã‚¹ãƒãƒ£é…åˆ—ã§ã‚‚ãªã„ã—3Dãƒ†ã‚¯ã‚¹ãƒãƒ£ã§ã‚‚ãªã„
+	// depthResDesc.Format = DXGI_FORMAT_D32_FLOAT;//æ·±åº¦å€¤æ›¸ãè¾¼ã¿ç”¨ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆ
+	depthResDesc.Format = DXGI_FORMAT_R32_TYPELESS; // ãƒãƒƒãƒ•ã‚¡ã®ãƒ“ãƒƒãƒˆæ•°ã¯32ã ã‘ã©æ‰±ã„æ–¹ã¯Viewå´ãŒæ±ºã‚ã¦ã‚ˆã„
+	depthResDesc.SampleDesc.Count = 1;// ã‚µãƒ³ãƒ—ãƒ«ã¯1ãƒ”ã‚¯ã‚»ãƒ«å½“ãŸã‚Š1ã¤
+	depthResDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;//ã“ã®ãƒãƒƒãƒ•ã‚¡ã¯æ·±åº¦ã‚¹ãƒ†ãƒ³ã‚·ãƒ«
 	depthResDesc.MipLevels = 1;
 	depthResDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	depthResDesc.Alignment = 0;
@@ -156,9 +86,9 @@ void Application::CreateDepthStencilView() {
 	depthHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 	D3D12_CLEAR_VALUE depthClearValue = {};
 	depthClearValue.DepthStencil.Depth = 1.0f;
-	depthClearValue.Format = DXGI_FORMAT_D32_FLOAT;//32bit[“x’l‚Æ‚µ‚ÄƒNƒŠƒA
+	depthClearValue.Format = DXGI_FORMAT_D32_FLOAT;//32bitæ·±åº¦å€¤ã¨ã—ã¦ã‚¯ãƒªã‚¢
 
-	CheckError("CreateDepthResource", _dev->CreateCommittedResource(
+	CheckError("CreateDepthResource", _graphicsDevice->GetDevice()->CreateCommittedResource(
 		&depthHeapProp,
 		D3D12_HEAP_FLAG_NONE,
 		&depthResDesc,
@@ -169,7 +99,7 @@ void Application::CreateDepthStencilView() {
 	// Create Shadow Map
 	depthResDesc.Width = windowManager->GetWidth();
 	depthResDesc.Height = windowManager->GetHeight();
-	CheckError("CreateDepthResource", _dev->CreateCommittedResource(
+	CheckError("CreateDepthResource", _graphicsDevice->GetDevice()->CreateCommittedResource(
 		&depthHeapProp,
 		D3D12_HEAP_FLAG_NONE,
 		&depthResDesc,
@@ -186,7 +116,7 @@ void Application::CreateDepthStencilView() {
 	descHeapDesc.NodeMask = 0;
 	descHeapDesc.NumDescriptors = 2; // 0: normal depth, 1: light depth
 	descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-	CheckError("CreateDepthDescriptorHeap", _dev->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(_dsvHeap.ReleaseAndGetAddressOf())));
+	CheckError("CreateDepthDescriptorHeap", _graphicsDevice->GetDevice()->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(_dsvHeap.ReleaseAndGetAddressOf())));
 
 	// CreateDepthStencilView
 	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
@@ -194,22 +124,22 @@ void Application::CreateDepthStencilView() {
 	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
 	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = _dsvHeap->GetCPUDescriptorHandleForHeapStart();
-	_dev->CreateDepthStencilView(_depthBuffer.Get(), &dsvDesc, dsvHandle);
-	dsvHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-	_dev->CreateDepthStencilView(_lightDepthBuffer.Get(), &dsvDesc, dsvHandle);
+	_graphicsDevice->GetDevice()->CreateDepthStencilView(_depthBuffer.Get(), &dsvDesc, dsvHandle);
+	dsvHandle.ptr += _graphicsDevice->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+	_graphicsDevice->GetDevice()->CreateDepthStencilView(_lightDepthBuffer.Get(), &dsvDesc, dsvHandle);
 
 	// CreateDepthSRV
-	g_resourceDescriptorHeapWrapper->AddSRV(_dev.Get(), _depthBuffer.Get(), DXGI_FORMAT_R32_FLOAT);
-	g_resourceDescriptorHeapWrapper->AddSRV(_dev.Get(), _lightDepthBuffer.Get(), DXGI_FORMAT_R32_FLOAT);
+	g_resourceDescriptorHeapWrapper->AddSRV(_graphicsDevice->GetDevice(), _depthBuffer.Get(), DXGI_FORMAT_R32_FLOAT);
+	g_resourceDescriptorHeapWrapper->AddSRV(_graphicsDevice->GetDevice(), _lightDepthBuffer.Get(), DXGI_FORMAT_R32_FLOAT);
 }
 
 void Application::CreatePostProcessResourceAndView() {
-	auto resDesc = g_pRenderTargets[0]->GetDesc();
+	auto resDesc = _graphicsDevice->GetCurrentBackBuffer()->GetDesc();
 	D3D12_HEAP_PROPERTIES heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 	float val[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	D3D12_CLEAR_VALUE clearValue = CD3DX12_CLEAR_VALUE(DXGI_FORMAT_R8G8B8A8_UNORM, val);
 
-	CheckError("CreatePostProcessResource", _dev->CreateCommittedResource(
+	CheckError("CreatePostProcessResource", _graphicsDevice->GetDevice()->CreateCommittedResource(
 		&heapProp,
 		D3D12_HEAP_FLAG_NONE,
 		&resDesc,
@@ -224,10 +154,10 @@ void Application::CreatePostProcessResourceAndView() {
 	rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D; // is it saying draw pixels as 2d texture?
 
 	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = _rtvHeap->GetCPUDescriptorHandleForHeapStart();
-	cpuHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) * 2; // RenderTarget * 2
-	_dev->CreateRenderTargetView(_postProcessResource.Get(), &rtvDesc, cpuHandle);
+	cpuHandle.ptr += _graphicsDevice->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) * 2; // RenderTarget * 2
+	_graphicsDevice->GetDevice()->CreateRenderTargetView(_postProcessResource.Get(), &rtvDesc, cpuHandle);
 
-	g_resourceDescriptorHeapWrapper->AddSRV(_dev.Get(), _postProcessResource.Get(), DXGI_FORMAT_R8G8B8A8_UNORM);
+	g_resourceDescriptorHeapWrapper->AddSRV(_graphicsDevice->GetDevice(), _postProcessResource.Get(), DXGI_FORMAT_R8G8B8A8_UNORM);
 	// MEMO: _postProcessResource is used both as Render Target and Shader Resource. 
 	// Through _postProcessRTVHeap, write draw output of first pass to _postProcessResource. After that, through _postProcessSRVHeap, use it as texture for post processing.
 }
@@ -282,8 +212,8 @@ bool Application::CreatePipelineState() {
 				D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA
 			}
 		};
-		gpipeline.InputLayout.pInputElementDescs = inputLayout;//ƒŒƒCƒAƒEƒgæ“ªƒAƒhƒŒƒX
-		gpipeline.InputLayout.NumElements = _countof(inputLayout);//ƒŒƒCƒAƒEƒg”z—ñ”
+		gpipeline.InputLayout.pInputElementDescs = inputLayout;//ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆå…ˆé ­ã‚¢ãƒ‰ãƒ¬ã‚¹
+		gpipeline.InputLayout.NumElements = _countof(inputLayout);//ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆé…åˆ—æ•°
 	}
 
 	TShader vs, ps;
@@ -300,7 +230,7 @@ bool Application::CreatePipelineState() {
 		gpipeline.VS = vs.GetShaderBytecode();
 		gpipeline.PS = ps.GetShaderBytecode();
 
-		gpipeline.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;//’†g‚Í0xffffffff
+		gpipeline.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;//ä¸­èº«ã¯0xffffffff
 		gpipeline.HS.BytecodeLength = 0;
 		gpipeline.HS.pShaderBytecode = nullptr;
 		gpipeline.DS.BytecodeLength = 0;
@@ -308,12 +238,12 @@ bool Application::CreatePipelineState() {
 		gpipeline.GS.BytecodeLength = 0;
 		gpipeline.GS.pShaderBytecode = nullptr;
 
-		// ƒ‰ƒXƒ^ƒ‰ƒCƒU‚Ìİ’è
+		// ãƒ©ã‚¹ã‚¿ãƒ©ã‚¤ã‚¶ã®è¨­å®š
 		gpipeline.RasterizerState.MultisampleEnable = false;
 		gpipeline.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 		gpipeline.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
 		gpipeline.RasterizerState.DepthClipEnable = true;
-		//c‚è
+		//æ®‹ã‚Š
 		gpipeline.RasterizerState.FrontCounterClockwise = false;
 		gpipeline.RasterizerState.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
 		gpipeline.RasterizerState.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
@@ -322,11 +252,11 @@ bool Application::CreatePipelineState() {
 		gpipeline.RasterizerState.ForcedSampleCount = 0;
 		gpipeline.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
 
-		// OutputMerger•”•ª
-		gpipeline.NumRenderTargets = 1;//¡‚Í‚P‚Â‚Ì‚İ
-		gpipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;//0`1‚É³‹K‰»‚³‚ê‚½RGBA
+		// OutputMergeréƒ¨åˆ†
+		gpipeline.NumRenderTargets = 1;//ä»Šã¯ï¼‘ã¤ã®ã¿
+		gpipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;//0ï½1ã«æ­£è¦åŒ–ã•ã‚ŒãŸRGBA
 
-		//[“xƒXƒeƒ“ƒVƒ‹
+		//æ·±åº¦ã‚¹ãƒ†ãƒ³ã‚·ãƒ«
 		gpipeline.DepthStencilState.DepthEnable = true;
 		gpipeline.DepthStencilState.StencilEnable = false;
 		gpipeline.DSVFormat = DXGI_FORMAT_D32_FLOAT;
@@ -350,26 +280,26 @@ bool Application::CreatePipelineState() {
 		renderTargetBlendDesc.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA; // Destination alpha blend factor is inverse source alpha
 		renderTargetBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD; // Alpha blending operation is addition
 
-		//‚Ğ‚Æ‚Ü‚¸˜_—‰‰Z‚Íg—p‚µ‚È‚¢
+		//ã²ã¨ã¾ãšè«–ç†æ¼”ç®—ã¯ä½¿ç”¨ã—ãªã„
 		renderTargetBlendDesc.LogicOpEnable = false;
 		renderTargetBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
 
 		gpipeline.BlendState.RenderTarget[0] = renderTargetBlendDesc;
-		// ƒAƒ‹ƒtƒ@ƒuƒŒƒ“ƒhON, ƒAƒ‹ƒtƒ@ƒeƒXƒgOFF‚¾‚Æa==0‚Ì‚É‚àPS‚ª‘–‚Á‚Ä–³‘ÊB
-		// “`““I‚ÉƒAƒ‹ƒtƒ@ƒuƒŒƒ“ƒh‚·‚é‚Æ‚«‚É‚ÍƒAƒ‹ƒtƒ@ƒeƒXƒg‚à‚·‚éB‚±‚ê‚Í‘a‚Ìİ’èB
-		// ‚±‚ê‚ÍA]—ˆ‚Ì‚É‰Á‚¦‚Äƒ}ƒ‹ƒ`ƒTƒ“ƒvƒŠƒ“ƒO‚Ì–Ô—…—¦‚ª“ü‚é‚©‚çƒAƒ“ƒ`ƒGƒCƒŠƒAƒX‚É‚«‚ê‚¢‚É‚È‚éHH
+		// ã‚¢ãƒ«ãƒ•ã‚¡ãƒ–ãƒ¬ãƒ³ãƒ‰ON, ã‚¢ãƒ«ãƒ•ã‚¡ãƒ†ã‚¹ãƒˆOFFã ã¨a==0ã®æ™‚ã«ã‚‚PSãŒèµ°ã£ã¦ç„¡é§„ã€‚
+		// ä¼çµ±çš„ã«ã‚¢ãƒ«ãƒ•ã‚¡ãƒ–ãƒ¬ãƒ³ãƒ‰ã™ã‚‹ã¨ãã«ã¯ã‚¢ãƒ«ãƒ•ã‚¡ãƒ†ã‚¹ãƒˆã‚‚ã™ã‚‹ã€‚ã“ã‚Œã¯ç–ã®è¨­å®šã€‚
+		// ã“ã‚Œã¯ã€å¾“æ¥ã®ã«åŠ ãˆã¦ãƒãƒ«ãƒã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°æ™‚ã®ç¶²ç¾…ç‡ãŒå…¥ã‚‹ã‹ã‚‰ã‚¢ãƒ³ãƒã‚¨ã‚¤ãƒªã‚¢ã‚¹æ™‚ã«ãã‚Œã„ã«ãªã‚‹ï¼Ÿï¼Ÿ
 		gpipeline.BlendState.AlphaToCoverageEnable = false;
 		gpipeline.BlendState.IndependentBlendEnable = false;
 	}
 
-	gpipeline.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED;//ƒXƒgƒŠƒbƒv‚ÌƒJƒbƒg‚È‚µ
-	gpipeline.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;//OŠpŒ`‚Å\¬
+	gpipeline.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED;//ã‚¹ãƒˆãƒªãƒƒãƒ—æ™‚ã®ã‚«ãƒƒãƒˆãªã—
+	gpipeline.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;//ä¸‰è§’å½¢ã§æ§‹æˆ
 
-	// AA‚É‚Â‚¢‚Ä
-	gpipeline.SampleDesc.Count = 1;//ƒTƒ“ƒvƒŠƒ“ƒO‚Í1ƒsƒNƒZƒ‹‚É‚Â‚«‚P
-	gpipeline.SampleDesc.Quality = 0;//ƒNƒIƒŠƒeƒB‚ÍÅ’á
+	// AAã«ã¤ã„ã¦
+	gpipeline.SampleDesc.Count = 1;//ã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°ã¯1ãƒ”ã‚¯ã‚»ãƒ«ã«ã¤ãï¼‘
+	gpipeline.SampleDesc.Quality = 0;//ã‚¯ã‚ªãƒªãƒ†ã‚£ã¯æœ€ä½
 
-	CheckError("CreateGraphicsPipelineState", _dev->CreateGraphicsPipelineState(&gpipeline, IID_PPV_ARGS(_pipelineState.ReleaseAndGetAddressOf())));
+	CheckError("CreateGraphicsPipelineState", _graphicsDevice->GetDevice()->CreateGraphicsPipelineState(&gpipeline, IID_PPV_ARGS(_pipelineState.ReleaseAndGetAddressOf())));
 	CreateShadowMapPipelineState(gpipeline);
 	return true;
 }
@@ -425,7 +355,7 @@ void Application::CreateCanvasPipelineState() {
 
 	Microsoft::WRL::ComPtr<ID3DBlob> rsBlob;
 	CheckError("SerializeCanvasRootSignature", D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, rsBlob.ReleaseAndGetAddressOf(), &errorBlob));
-	CheckError("CreateCanvasRootSignature", _dev->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(_canvasRootSignature.ReleaseAndGetAddressOf())));
+	CheckError("CreateCanvasRootSignature", _graphicsDevice->GetDevice()->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(_canvasRootSignature.ReleaseAndGetAddressOf())));
 
 
 
@@ -440,14 +370,14 @@ void Application::CreateCanvasPipelineState() {
 
 	gpipeline.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	gpipeline.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	gpipeline.NumRenderTargets = 1; // ‚±‚ê‚Å‚¢‚¢‚Ì‚©H‚±‚ÌƒpƒCƒvƒ‰ƒCƒ“‚Í‚±‚êH
+	gpipeline.NumRenderTargets = 1; // ã“ã‚Œã§ã„ã„ã®ã‹ï¼Ÿã“ã®ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã¯ã“ã‚Œï¼Ÿ
 	gpipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 	gpipeline.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	gpipeline.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 	gpipeline.SampleDesc.Count = 1;
 	gpipeline.SampleDesc.Quality = 0;
 	gpipeline.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-	CheckError("CreateGraphicsPipelineState", _dev->CreateGraphicsPipelineState(&gpipeline, IID_PPV_ARGS(_canvasPipelineState.ReleaseAndGetAddressOf())));
+	CheckError("CreateGraphicsPipelineState", _graphicsDevice->GetDevice()->CreateGraphicsPipelineState(&gpipeline, IID_PPV_ARGS(_canvasPipelineState.ReleaseAndGetAddressOf())));
 }
 
 void Application::CreateShadowMapPipelineState(D3D12_GRAPHICS_PIPELINE_STATE_DESC gpipelineDesc) {
@@ -458,14 +388,14 @@ void Application::CreateShadowMapPipelineState(D3D12_GRAPHICS_PIPELINE_STATE_DES
 	gpipelineDesc.PS.BytecodeLength = 0;
 	gpipelineDesc.NumRenderTargets = 0;
 	gpipelineDesc.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
-	CheckError("CreateGraphicsPipelineState", _dev->CreateGraphicsPipelineState(&gpipelineDesc, IID_PPV_ARGS(_shadowPipelineState.ReleaseAndGetAddressOf())));
+	CheckError("CreateGraphicsPipelineState", _graphicsDevice->GetDevice()->CreateGraphicsPipelineState(&gpipelineDesc, IID_PPV_ARGS(_shadowPipelineState.ReleaseAndGetAddressOf())));
 }
 
 void Application::CreateCBV() {
-	// TODO : ‚±‚±‚ç‚Ö‚ñinput‚©‚ç“®‚©‚¹‚é‚æ‚¤‚É‚·‚é@•ª‚©‚é‚æ‚¤‚É¶ã‚Éprint
+	// TODO : ã“ã“ã‚‰ã¸ã‚“inputã‹ã‚‰å‹•ã‹ã›ã‚‹ã‚ˆã†ã«ã™ã‚‹ã€€åˆ†ã‹ã‚‹ã‚ˆã†ã«å·¦ä¸Šã«print
 	XMMATRIX mMatrix = XMMatrixIdentity();
-	XMVECTOR eyePos = { 0, 13., -30 }; // ‹“_
-	XMVECTOR targetPos = { 0, 10.5, 0 }; // ’‹“_
+	XMVECTOR eyePos = { 0, 13., -30 }; // è¦–ç‚¹
+	XMVECTOR targetPos = { 0, 10.5, 0 }; // æ³¨è¦–ç‚¹
 	XMVECTOR upVec = { 0, 1, 0 };
 	_vMatrix = XMMatrixLookAtLH(eyePos, targetPos, upVec);
 	// FOV, aspect ratio, near, far
@@ -475,18 +405,18 @@ void Application::CreateCBV() {
 	XMVECTOR lightVec = { 1, -1, 1 };
 	XMVECTOR planeVec = { 0, 1, 0, 0 };
 
-	// light pos: ‹“_‚Æ’‹“_‚Ì‹——£‚ğˆÛ
+	// light pos: è¦–ç‚¹ã¨æ³¨è¦–ç‚¹ã®è·é›¢ã‚’ç¶­æŒ
 	auto lightPos = targetPos + XMVector3Normalize(lightVec) * XMVector3Length(XMVectorSubtract(targetPos, eyePos)).m128_f32[0];
 
-	TDX12ConstantBuffer* transformConstantBuffer = new TDX12ConstantBuffer(sizeof(TransformMatrices), _dev.Get());
-	TDX12ConstantBuffer* sceneConstantBuffer = new TDX12ConstantBuffer(sizeof(SceneMatrices), _dev.Get());
+	_transformCB = std::make_unique<TDX12ConstantBuffer>(sizeof(TransformMatrices), _graphicsDevice->GetDevice());
+	_sceneCB = std::make_unique<TDX12ConstantBuffer>(sizeof(SceneMatrices), _graphicsDevice->GetDevice());
 	{
-		transformConstantBuffer->Map((void**)&_mapTransformMatrix);
+		_transformCB->Map((void**)&_mapTransformMatrix);
 		_mapTransformMatrix->world = mMatrix;
 		std::vector<XMMATRIX> boneMatrices(256, XMMatrixIdentity());
 		std::copy(boneMatrices.begin(), boneMatrices.end(), _mapTransformMatrix->bones);
-		// TODO : ‚±‚±‚ç‚Ö‚ñİ’è‚µ‚â‚·‚¢‚æ‚¤‚É, Map interface‚ğÁ‚·
-		sceneConstantBuffer->Map((void**)&_mapSceneMatrix);
+		// TODO : ã“ã“ã‚‰ã¸ã‚“è¨­å®šã—ã‚„ã™ã„ã‚ˆã†ã«, Map interfaceã‚’æ¶ˆã™
+		_sceneCB->Map((void**)&_mapSceneMatrix);
 		_mapSceneMatrix->view = _vMatrix;
 		_mapSceneMatrix->proj = _pMatrix;
 		_mapSceneMatrix->lightViewProj = XMMatrixLookAtLH(lightPos, targetPos, upVec) * XMMatrixOrthographicLH(40, 40, 1.0f, 100.0f); // lightView * lightProj
@@ -494,31 +424,15 @@ void Application::CreateCBV() {
 		_mapSceneMatrix->eye = XMFLOAT3(eyePos.m128_f32[0], eyePos.m128_f32[1], eyePos.m128_f32[2]);
 		_mapSceneMatrix->shadow = XMMatrixShadow(planeVec, -lightVec);
 	}
-	g_resourceDescriptorHeapWrapper->AddCBV(_dev.Get(), transformConstantBuffer->m_constantBuffer);
-	g_resourceDescriptorHeapWrapper->AddCBV(_dev.Get(), sceneConstantBuffer->m_constantBuffer);
+	g_resourceDescriptorHeapWrapper->AddCBV(_graphicsDevice->GetDevice(), _transformCB->m_constantBuffer);
+	g_resourceDescriptorHeapWrapper->AddCBV(_graphicsDevice->GetDevice(), _sceneCB->m_constantBuffer);
 	{ // Send handle data to CBV which each mesh will use (mainly for bone matrices on Compute Pass)
-		for (auto& mesh : mesh_draw_info_list) {
-			mesh.cbvGpuHandle = transformConstantBuffer->m_constantBuffer->GetGPUVirtualAddress();
+		if (_model) {
+			_model->SetBoneCBV(_transformCB->m_constantBuffer->GetGPUVirtualAddress());
 		}
 	}
 }
 
-void Application::WaitDrawDone() {
-	////‘Ò‚¿
-	_cmdQueue->Signal(_fence.Get(), ++_fenceVal);
-
-	// GPU‚Ìˆ—‚ªI‚í‚é‚ÆASignal‚Å“n‚µ‚½‘æ“ñˆø”‚ª•Ô‚Á‚Ä‚­‚é
-	if (_fence->GetCompletedValue() != _fenceVal) { // ƒRƒ}ƒ“ƒhƒLƒ…[‚ªI—¹‚µ‚Ä‚¢‚È‚¢‚±‚Æ‚ğŠm”F
-		HANDLE event = CreateEvent(nullptr, false, false, nullptr);
-		// https://sites.google.com/site/monshonosuana/directxno-hanashi-1/directx-144
-		// ‚¢‚¿‚¢‚¿eventì‚ç‚È‚¢‚â‚ÂH
-		_fence->SetEventOnCompletion(_fenceVal, event);// ƒtƒFƒ“ƒX’l‚ª‘æˆêˆø”‚É‚È‚Á‚½‚Æ‚«‚ÉAevent‚ğ’Ê’m
-		if (event) {
-			WaitForSingleObject(event, INFINITE);
-			CloseHandle(event);
-		}
-	}
-}
 
 void Application::SetupImGui() {
 	// Code from: https://github.com/ocornut/imgui/blob/master/examples/example_win32_directx12/main.cpp
@@ -547,8 +461,8 @@ void Application::SetupImGui() {
 	ImGui_ImplWin32_Init(windowManager->GetHandle());
 
 	ImGui_ImplDX12_InitInfo init_info = {};
-	init_info.Device = _dev.Get();
-	init_info.CommandQueue = _cmdQueue.Get();
+	init_info.Device = _graphicsDevice->GetDevice();
+	init_info.CommandQueue = _graphicsDevice->GetCommandQueue();
 	init_info.NumFramesInFlight = APP_NUM_FRAMES_IN_FLIGHT;
 	init_info.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 	init_info.DSVFormat = DXGI_FORMAT_UNKNOWN;
@@ -559,18 +473,27 @@ void Application::SetupImGui() {
 	init_info.SrvDescriptorFreeFn = [](ImGui_ImplDX12_InitInfo*, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) { return g_resourceDescriptorHeapWrapper->FreeDynamic(cpu_handle, gpu_handle); };
 	ImGui_ImplDX12_Init(&init_info);
 	
-	// ImGui‚Í‚±‚¿‚ç‚ÌƒVƒF[ƒ_[‘¤‚Å”—{‚·‚é‚í‚¯‚Å‚Í‚È‚¢‚Ì‚ÅARootSignature‘¤‚Å“Á‚ÉƒVƒF[ƒ_[‘¤‚Å‚Ìg‚¢•û‚ğ’è‹`‚·‚é•K—v‚Í‚È‚¢B
-	// DescriptorHeapã‚ÌD3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLE‚ªg—p‚Éæ‚ê‚ê‚Î—Ç‚¢B
+	// ImGuiã¯ã“ã¡ã‚‰ã®ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼å´ã§é£¼é¤Šã™ã‚‹ã‚ã‘ã§ã¯ãªã„ã®ã§ã€RootSignatureå´ã§ç‰¹ã«ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼å´ã§ã®ä½¿ã„æ–¹ã‚’å®šç¾©ã™ã‚‹å¿…è¦ã¯ãªã„ã€‚
+	// DescriptorHeapä¸Šã®D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLEãŒä½¿ç”¨æ™‚ã«å–ã‚Œã‚Œã°è‰¯ã„ã€‚
 }
 
 void Application::DrawImGui(bool &useGpuSkinning, ModelViewer::AnimState& animState) {
-	
+	ImGui_ImplDX12_NewFrame();
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+
+	if (ImGui::BeginMainMenuBar()) {
+		if (ImGui::BeginMenu("File")) {
+			if (ImGui::MenuItem("Open...")) {
+				OpenFileDialog();
+			}
+			ImGui::EndMenu();
+		}
+		ImGui::EndMainMenuBar();
+	}
+
 		ImGuiIO& io = ImGui::GetIO();
 
-		// Start the Dear ImGui frame
-		ImGui_ImplDX12_NewFrame();
-		ImGui_ImplWin32_NewFrame();
-		ImGui::NewFrame();
 		// 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
 		//if (show_demo_window)
 			//ImGui::ShowDemoWindow(&show_demo_window);
@@ -607,9 +530,9 @@ void Application::DrawImGui(bool &useGpuSkinning, ModelViewer::AnimState& animSt
 			ImGui::End();
 		}
 
+
 		// Rendering
 		ImGui::Render();
-	
 }
 
 void Application::CleanupImGui() {
@@ -619,248 +542,137 @@ void Application::CleanupImGui() {
 	ImGui::DestroyContext();
 }
 
+void Application::ReleaseModelResources() {
+	_graphicsDevice->WaitDrawDone();
+	_model.reset();
+	if (g_resourceDescriptorHeapWrapper) {
+		g_resourceDescriptorHeapWrapper->Reset(3);
+	}
+}
+
+void Application::OpenFileDialog() {
+	IFileOpenDialog* pFileOpen;
+	HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
+	if (SUCCEEDED(hr)) {
+		COMDLG_FILTERSPEC rgSpec[] = {
+			{ L"Model Files", L"*.gltf;*.fbx;*.obj;*.glb" },
+			{ L"All Files", L"*.*" }
+		};
+		pFileOpen->SetFileTypes(ARRAYSIZE(rgSpec), rgSpec);
+		hr = pFileOpen->Show(windowManager->GetHandle());
+		if (SUCCEEDED(hr)) {
+			IShellItem* pItem;
+			hr = pFileOpen->GetResult(&pItem);
+			if (SUCCEEDED(hr)) {
+				PWSTR pszFilePath;
+				hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+				if (SUCCEEDED(hr)) {
+					int size = WideCharToMultiByte(CP_ACP, 0, pszFilePath, -1, NULL, 0, NULL, NULL);
+					std::vector<char> path(size);
+					WideCharToMultiByte(CP_ACP, 0, pszFilePath, -1, path.data(), size, NULL, NULL);
+					_pendingModelPath = path.data();
+					_shouldReloadModel = true;
+					CoTaskMemFree(pszFilePath);
+				}
+				else {
+					std::cout << "Failed to get display name: HR=" << std::hex << hr << std::endl;
+				}
+				pItem->Release();
+			}
+			else {
+				std::cout << "Failed to get result: HR=" << std::hex << hr << std::endl;
+			}
+		}
+		else if (hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+			std::cout << "Failed to show dialog: HR=" << std::hex << hr << std::endl;
+		}
+		pFileOpen->Release();
+	}
+	else {
+		std::cout << "Failed to create FileOpenDialog: HR=" << std::hex << hr << std::endl;
+	}
+}
+
+bool Application::LoadModel(const std::string& path) {
+	std::cout << "[Debug] Application::LoadModel called with path: " << path << std::endl;
+	
+	ReleaseModelResources(); // Ensure old model data is cleared
+
+	_modelImporter = std::make_unique<ModelImporter>();
+	if (!_modelImporter->CreateModelImporter(path)) {
+		std::cout << "Failed to load model: " << path << std::endl;
+		return false;
+	}
+
+	std::string modelDir = path.substr(0, path.find_last_of("\\/")) + "/";
+
+	_model = std::make_unique<Model>();
+	if (!_model->Initialize(_graphicsDevice->GetDevice(), _modelImporter.get(), modelDir, g_resourceDescriptorHeapWrapper.get())) {
+		std::cout << "Failed to initialize model resources." << std::endl;
+		_model.reset();
+		return false;
+	}
+
+	CreateCBV();
+	SetupComputePass();
+	return true;
+}
+
 bool Application::Init() {
 	DebugOutput("Show window test");
-	windowManager = new TWindowManager(1280, 720);
+	windowManager = std::make_unique<TWindowManager>(1280, 720);
 #ifdef _DEBUG
 	EnableDebugLayer();
-	// EXECUTION ERROR #538: INVALID_SUBRESOURCE_STATE
-	// EXECUTION ERROR #552: COMMAND_ALLOCATOR_SYNC
-	// -> uÀs‚ªŠ®—¹‚µ‚Ä‚È‚¢‚Ì‚ÉƒŠƒZƒbƒg‚µ‚Ä‚¢‚év@¨@ƒoƒŠƒA‚ÆƒtƒFƒ“ƒX‚ğÀ‘•‚·‚é•K—v‚ª‚ ‚é
 #endif
-	CreateDevice();
-	CreateCommandList(D3D12_COMMAND_LIST_TYPE_DIRECT);
+	_graphicsDevice = std::make_unique<DX12GraphicsDevice>();
+	if (!_graphicsDevice->Initialize(windowManager->GetHandle(), windowManager->GetWidth(), windowManager->GetHeight())) {
+		return false;
+	}
 
 	if (g_resourceDescriptorHeapWrapper == nullptr) {
-		g_resourceDescriptorHeapWrapper = new TDX12DescriptorHeap(_dev.Get());
+		g_resourceDescriptorHeapWrapper = std::make_unique<TDX12DescriptorHeap>(_graphicsDevice->GetDevice());
 	}
+
+	// Create Fence ã¯ _graphicsDevice->Initialize å†…ã§è¡Œã‚ã‚Œã¾ã™
 
 	// ImGui setup requires Device, CommandQueue, SRV Descriptor Heap.
 	SetupImGui();
 
-	// TODO: need to organize model file locations
-	// Model file
-	std::string fbxFileName = "../model-viewer-dx12/assets/scene.gltf";
+	// èµ·å‹•æ™‚ã®è‡ªå‹•ãƒ­ãƒ¼ãƒ‰ã‚’å‰Šé™¤
+	// (ä»¥å‰ã®ã‚³ãƒ¡ãƒ³ãƒˆã‚¢ã‚¦ãƒˆç®‡æ‰€ã‚’å®Œå…¨ã«å‰Šé™¤)
+	std::cout << "[Debug] Application::Init - skipping default model load" << std::endl;
 
-	_modelImporter = new ModelImporter();
-	if (!_modelImporter->CreateModelImporter(fbxFileName)) {
-		std::cout << "Failed to create Model Importer." << std::endl;
-		return false;
-	}
-	// 
-	m_rootSignature = new TDX12RootSignature();
-	m_rootSignature->Initialize(_dev.Get());
+	// åˆæœŸãƒ­ãƒ¼ãƒ‰ãŒã‚³ãƒ¡ãƒ³ãƒˆã‚¢ã‚¦ãƒˆã•ã‚Œã¦ã„ã‚‹ãŸã‚ã€æœ€ä½é™ã®å®šæ•°ãƒãƒƒãƒ•ã‚¡ã‚’ä½œæˆã—ã¦ãŠã
+	CreateCBV();
+
+	m_rootSignature = std::make_unique<TDX12RootSignature>();
+	m_rootSignature->Initialize(_graphicsDevice->GetDevice());
 
 	{ // Descriptor heap for RTV
 		D3D12_DESCRIPTOR_HEAP_DESC descHeapDesc = {};
 		descHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		descHeapDesc.NumDescriptors = 3; // •\ + —  + ƒ|ƒXƒgƒvƒƒZƒX—p
-		CheckError("Create RTV DescriptorHeap", _dev->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(_rtvHeap.ReleaseAndGetAddressOf())));
+		descHeapDesc.NumDescriptors = 3; // è¡¨ + è£ + ãƒã‚¹ãƒˆãƒ—ãƒ­ã‚»ã‚¹ç”¨
+		CheckError("Create RTV DescriptorHeap", _graphicsDevice->GetDevice()->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(_rtvHeap.ReleaseAndGetAddressOf())));
 	}
-	CreateSwapChain();
+	// SwapChain ã¯ _graphicsDevice->Initialize å†…ã§ä½œæˆã•ã‚Œã¾ã™
 
 	CreatePostProcessResourceAndView();
 	CreateDepthStencilView();
 
-	// Create Fence
-	CheckError("CreateFence", _dev->CreateFence(_fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence)));
+
 
 	if (!CreatePipelineState()) {
 		std::cout << "Failed to create pipeline state." << std::endl;
 		return false;
 	}
+	std::cout << "[Debug] Graphics Pipeline State created" << std::endl;
 	CreateCanvasPipelineState();
+	std::cout << "[Debug] Application::Init COMPLETED successfully" << std::endl;
 	return true;
 }
 
-void Application::SetVerticesInfo() {
-	CanvasVertex canvas[4] = {
-		{{-1.f,-1.f,0.1f},{0.f,1.f}}, // bottom left
-		{{-1.f,1.f,0.1f},{0.f,0.f}}, // top left
-		{{1.f,-1.f,0.1f},{1.f,1.f}}, // bottom right
-		{{1.f,1.f,0.1f}, {1.f,0.f}}, // bottom right
-	};
-
-	auto canvasHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto canvasResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(canvas));
-	ID3D12Resource* canvasVB = nullptr;
-
-	CheckError("CreateCanvasResource", _dev->CreateCommittedResource(
-		&canvasHeapProp,
-		D3D12_HEAP_FLAG_NONE,
-		&canvasResourceDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&canvasVB)
-	));
-	_canvasVBV.BufferLocation = canvasVB->GetGPUVirtualAddress();
-	_canvasVBV.SizeInBytes = sizeof(canvas);
-	_canvasVBV.StrideInBytes = sizeof(CanvasVertex);
-	CanvasVertex* mappedCanvas = nullptr;
-	canvasVB->Map(0, nullptr, (void**)&mappedCanvas);
-	std::copy(std::begin(canvas), std::end(canvas), mappedCanvas);
-	canvasVB->Unmap(0, nullptr);
-
-
-	for (auto itr : _modelImporter->mesh_vertices) {
-		std::string name = itr.first;
-		auto vertices = itr.second;
-		auto indices = _modelImporter->mesh_indices[name];
-		UINT vertexCount = (UINT)vertices.size();
-		UINT vertexSize = (UINT)sizeof(Vertex);
-		UINT indicesDataSize = (UINT)sizeof(unsigned short) * (UINT)indices.size();
-		// Material material = mesh_materials[name];
-		// Type, CPUPageProperty, MemoryPoolPreference, CreationNodeMask, VisibleNodeMask
-		// Type: How to use this resource. DEFAULT is GPU only RW memory, UPLOAD is the buffer sent from CPU to GPU, READBACK is the buffer sent from GPU to CPU.
-		//D3D12_HEAP_PROPERTIES heapprop = { D3D12_HEAP_TYPE_DEFAULT , D3D12_CPU_PAGE_PROPERTY_UNKNOWN , D3D12_MEMORY_POOL_UNKNOWN };
-		D3D12_HEAP_PROPERTIES heappropDefault = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-		D3D12_HEAP_PROPERTIES heappropUpload = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-		// •ûjƒƒ‚: UPLOADƒq[ƒvi’†Œp—pj‚©‚çDEFAULTƒq[ƒv‚ÖƒRƒs[‚·‚éB
-		// - Œ³XUPLOAD‚Åƒoƒbƒtƒ@‚ğ’è‹`¨Map‚ÅÀƒf[ƒ^‚ğGPU‚É‘—‚Á‚Ä‚¢‚½‚ªA•`‰æ‚Ì‘O’i‚ÉCS—p‚ÌƒpƒCƒvƒ‰ƒCƒ“‚ğì‚é‚±‚Æ‚ğl‚¦‚é‚ÆACS‚Ö‚Í’¸“_î•ñ‚ğSRV‚Å“n‚·•K—v‚ª‚ ‚éB
-		// - ‚µ‚©‚µASRV‚ÍUPLOAD‚Æ‚µ‚Ä‚Íì¬‚Å‚«‚È‚¢i“à•”“I‚È——RHjB‚»‚±‚Å
-		//@Buffer A(UPLOAD) : Map ‚µ‚Ä’¸“_ƒf[ƒ^‚ğ‘‚«‚Ş
-		//@Buffer B(DEFAULT) : SRV‚Æ‚µ‚Ä’è‹`
-		//	“]‘— : CopyBufferRegion ‚Å A ¨ B ‚ÖƒRƒs[B
-		//	CSÀs : Buffer B(SRV) ‚ğ“ü—ÍABuffer C(UAV / VBV) ‚ğo—Í‚Æ‚µ‚Äˆ—B
-		//	•`‰æ : Buffer C ‚ğ VBV ‚Æ‚µ‚Äg—pB
-		// WriteToSubresource ‚ÍAå‚Éu‚²‚­¬‚³‚Èƒf[ƒ^‚ğ1‰ñ‚¾‚¯A‰Šú‰»‚É‘‚«‚İ‚½‚¢v‚Æ‚¢‚Á‚½ƒP[ƒX‚ÅƒR[ƒh‚ğŠÈ—ª‰»‚·‚é‚½‚ß‚Ég‚í‚ê‚é‚ç‚µ‚¢B‚Ù‚ÚƒeƒNƒXƒ`ƒƒ—p‚Å’¸“_—p‚Å‚àg‚¦‚é‚©‚à‚¾‚¯‚Ç
-
-		D3D12_RESOURCE_DESC resdescVertex = CD3DX12_RESOURCE_DESC::Buffer(vertexCount * vertexSize);
-		D3D12_RESOURCE_DESC resdescVertexAllowUnorderedAccess = CD3DX12_RESOURCE_DESC::Buffer(vertexCount * vertexSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-		D3D12_RESOURCE_DESC resdescIndex = CD3DX12_RESOURCE_DESC::Buffer(indicesDataSize);
-
-		if (resdescVertex.Width == 0)
-		{
-			// ƒxƒWƒGİ’è“™?
-			continue;
-		}
-
-		// Fill this structure for downstream drawing
-		MeshDrawInfo meshInfo = {};
-
-		// ===== Allocate resources on GPU =====
-		// from
-		Vertex* vertMap = nullptr;
-		unsigned short* mappedIdx = nullptr;
-		// to
-		ID3D12Resource* vertexBufferUpload = nullptr; // 
-		ID3D12Resource* vertexBufferDefault = nullptr;
-		ID3D12Resource* indexBuffer = nullptr;
-		ID3D12Resource* pOutputVertexBuffer = nullptr; // Output from Compute Pass (managed by UAV)
-		{ // Map info of vertices
-			// (1) Buffer used for SRV UPLOAD
-			CheckError("CreateVertexBufferResource",
-				_dev->CreateCommittedResource(
-					&heappropUpload, // UPLOAD
-					D3D12_HEAP_FLAG_NONE,
-					&resdescVertex,
-					D3D12_RESOURCE_STATE_GENERIC_READ, // Initial state on GPU: GENERIC_READ beacause firstly it is read when copying vertex data
-					nullptr,
-					IID_PPV_ARGS(&vertexBufferUpload)
-				)
-			);
-			// (2) Buffer used for SRV UPLOAD
-			CheckError("CreateVertexBufferResource",
-				_dev->CreateCommittedResource(
-					&heappropDefault, // DEFAULT
-					D3D12_HEAP_FLAG_NONE,
-					&resdescVertex,
-					D3D12_RESOURCE_STATE_COMMON, // Initial state on GPU: COPY_DEST because firstly data will copy to this
-					nullptr,
-					IID_PPV_ARGS(&vertexBufferDefault)
-				)
-			);
-			CheckError("MapVertexBuffer", vertexBufferUpload->Map(0, nullptr, reinterpret_cast<void**>(&vertMap)));
-			std::copy(vertices.begin(), vertices.end(), vertMap);
-			vertexBufferUpload->Unmap(0, nullptr);
-			// Do nothing to the UPLOAD buffer for now, use _cmdList->CopyBufferRegion to copy data from the DEFAULT buffer
-			// (3) Output Vertices
-			CheckError("CreateSkinnedVertexBufferResource",
-				_dev->CreateCommittedResource(
-					&heappropDefault,
-					D3D12_HEAP_FLAG_NONE,
-					&resdescVertexAllowUnorderedAccess,
-					D3D12_RESOURCE_STATE_COMMON, // Initial sate on GPU: UNORDERED_ACCESS because CS output will be written to this
-					nullptr,
-					IID_PPV_ARGS(&pOutputVertexBuffer)
-				)
-			);
-
-		}
-		{ // Map index of vertices
-			CheckError("CreateIndexBufferResource", 
-				_dev->CreateCommittedResource(
-					&heappropUpload, 
-					D3D12_HEAP_FLAG_NONE, 
-					&resdescIndex, 
-					D3D12_RESOURCE_STATE_INDEX_BUFFER, 
-					nullptr, 
-					IID_PPV_ARGS(&indexBuffer)
-				)
-			);
-			indexBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedIdx));
-			std::copy(indices.begin(), indices.end(), mappedIdx);
-			indexBuffer->Unmap(0, nullptr);
-		}
-
-		// ===== Create views for resources created above =====
-		// Vertex Buffer View
-		D3D12_VERTEX_BUFFER_VIEW vbView = {};
-		vbView.BufferLocation = pOutputVertexBuffer->GetGPUVirtualAddress();
-		vbView.SizeInBytes = vertexCount * vertexSize;
-		vbView.StrideInBytes = vertexSize;
-		vertex_buffer_view[name] = vbView;
-		// Index Buffer View
-		D3D12_INDEX_BUFFER_VIEW ibView = {};
-		ibView.BufferLocation = indexBuffer->GetGPUVirtualAddress();
-		ibView.Format = DXGI_FORMAT_R16_UINT;
-		ibView.SizeInBytes = indicesDataSize;
-		index_buffer_view[name] = ibView;
-
-
-
-		// TODO: GPU Handle‚ğ‘O‚©‚çi‚ß‚Ä‚¢‚Á‚ÄAw’è‚Ì‚Æ‚±‚ë‚Ü‚ÅˆÚ“®‚³‚¹‚Ä‚©‚çSetGraphicsRootDescriptorTable‚ğ‚â‚é‚Ì‚ÍŠg’£«‚É–R‚µ‚¢‚Ì‚ÅA“Á’èƒf[ƒ^‚ğˆµ‚¤\‘¢‘Ì‚ÉGPU Handle‚ğ‚½‚¹‚éBˆê’UCS‚Åg‚¤ƒf[ƒ^‚Ì‚İ
-		meshInfo.vertexCount = (UINT)vertices.size();
-		meshInfo.pOutputVertexBuffer = pOutputVertexBuffer;
-		{ // SRV
-			// TODO: AddSRV is not sufficient to organize all the SRV creation (for not knowing how to use SRV in ways other than texture)
-			// https://github.com/microsoft/DirectX-Graphics-Samples/blob/b5f92e2251ee83db4d4c795b3cba5d470c52eaf8/MiniEngine/Core/GpuBuffer.cpp?plain=1#L195-L197
-			D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
-			D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle;
-			g_resourceDescriptorHeapWrapper->AllocDynamic(&cpuHandle, &gpuHandle);
-
-			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-			srvDesc.Buffer.NumElements = vertexCount;
-			srvDesc.Buffer.StructureByteStride = vertexSize;
-			_dev->CreateShaderResourceView(vertexBufferDefault, &srvDesc, cpuHandle);
-
-			meshInfo.srvGpuHandle = gpuHandle;
-		}
-		{ // UAV
-			D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
-			D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle;
-			g_resourceDescriptorHeapWrapper->AllocDynamic(&cpuHandle, &gpuHandle);
-
-			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-			uavDesc.Format = DXGI_FORMAT_UNKNOWN;
-			uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-			uavDesc.Buffer.NumElements = vertexCount;
-			uavDesc.Buffer.StructureByteStride = vertexSize;
-			_dev->CreateUnorderedAccessView(pOutputVertexBuffer, nullptr, &uavDesc, cpuHandle);
-			//meshInfo.uavGpuHandle = g_resourceDescriptorHeapWrapper->AddUAV(_dev.Get(), pOutputVertexBuffer); // TODO: remove this function
-			meshInfo.uavGpuHandle = gpuHandle;
-		}
-
-		//meshInfo.cbvGpuHandle =  // -> assigned in CreateCBV
-		mesh_draw_info_list.push_back(meshInfo);
-
-		_cmdList->CopyBufferRegion(vertexBufferDefault, 0, vertexBufferUpload, 0, vertexCount * vertexSize);
-	}
-}
+// Application::SetVerticesInfo() has been migrated to Model::Initialize()
 
 void Application::SetupComputePass() {
 	// Shader compile -> Create Root signature -> Create compute pipeline -> Create DescHeap -> Create Resources -> Create UAV -> Map
@@ -898,19 +710,19 @@ void Application::SetupComputePass() {
 	ID3DBlob* rootSignatureBlob = nullptr;
 	// Selialize Root Signature?
 	ID3DBlob* errorBlob = nullptr;
-	D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &rootSignatureBlob, &errorBlob);
-	_dev->CreateRootSignature(0, rootSignatureBlob->GetBufferPointer(), rootSignatureBlob->GetBufferSize(), IID_PPV_ARGS(_computeRootSignature.ReleaseAndGetAddressOf()));
+	CheckError("SerializeComputeRootSignature", D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &rootSignatureBlob, &errorBlob));
+	_graphicsDevice->GetDevice()->CreateRootSignature(0, rootSignatureBlob->GetBufferPointer(), rootSignatureBlob->GetBufferSize(), IID_PPV_ARGS(_computeRootSignature.ReleaseAndGetAddressOf()));
 	rootSignatureBlob->Release();
 
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
 	computePipelineStateDesc.pRootSignature = _computeRootSignature.Get();
 	computePipelineStateDesc.CS = cs.GetShaderBytecode();
 	computePipelineStateDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-	_dev->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&_computePipelineState));
+	_graphicsDevice->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(_computePipelineState.ReleaseAndGetAddressOf()));
 }
 
 void Application::Run() {
-	ShowWindow(windowManager->GetHandle(), SW_SHOW);//ƒEƒBƒ“ƒhƒE•\¦
+	ShowWindow(windowManager->GetHandle(), SW_SHOW);//ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦è¡¨ç¤º
 
 	D3D12_VIEWPORT viewport = {};
 	viewport.Width = (float)windowManager->GetWidth(); // pixel
@@ -921,18 +733,14 @@ void Application::Run() {
 	viewport.MinDepth = 0.0f;
 
 	D3D12_RECT scissorrect = {};
-	scissorrect.top = 0;//Ø‚è”²‚«ãÀ•W
-	scissorrect.left = 0;//Ø‚è”²‚«¶À•W
-	scissorrect.right = scissorrect.left + windowManager->GetWidth();//Ø‚è”²‚«‰EÀ•W
-	scissorrect.bottom = scissorrect.top + windowManager->GetHeight();//Ø‚è”²‚«‰ºÀ•W
+	scissorrect.top = 0;//åˆ‡ã‚ŠæŠœãä¸Šåº§æ¨™
+	scissorrect.left = 0;//åˆ‡ã‚ŠæŠœãå·¦åº§æ¨™
+	scissorrect.right = scissorrect.left + windowManager->GetWidth();//åˆ‡ã‚ŠæŠœãå³åº§æ¨™
+	scissorrect.bottom = scissorrect.top + windowManager->GetHeight();//åˆ‡ã‚ŠæŠœãä¸‹åº§æ¨™
 
 
-	SetVerticesInfo();
 
-	CreateCBV(); // Need create CBV after SetVerticesInfo for now because CreateCBV insert GPU address of CB into mesh_draw_info_list  (TODO: redesign structure)
-
-	SetupComputePass();
-	//ƒmƒCƒYƒeƒNƒXƒ`ƒƒ‚Ìì¬
+	//ãƒã‚¤ã‚ºãƒ†ã‚¯ã‚¹ãƒãƒ£ã®ä½œæˆ
 //struct TexRGBA {
 //	unsigned char R, G, B, A;
 //};
@@ -942,26 +750,16 @@ void Application::Run() {
 //	rgba.R = rand() % 256;
 //	rgba.G = rand() % 256;
 //	rgba.B = rand() % 256;
-//	rgba.A = 255;//ƒAƒ‹ƒtƒ@‚Í1.0‚Æ‚¢‚¤–‚É‚µ‚Ü‚·B
+//	rgba.A = 255;//ã‚¢ãƒ«ãƒ•ã‚¡ã¯1.0ã¨ã„ã†äº‹ã«ã—ã¾ã™ã€‚
 //}
 
 	//D3D12_CONSTANT_BUFFER_VIEW_DESC materialCBVDesc;
-	//materialCBVDesc.BufferLocation = materialBuff->GetGPUVirtualAddress(); // ƒ}ƒbƒvæ‚ğ‰Ÿ‚µ‚Ä‚é
+	//materialCBVDesc.BufferLocation = materialBuff->GetGPUVirtualAddress(); // ãƒãƒƒãƒ—å…ˆã‚’æŠ¼ã—ã¦ã‚‹
 	//materialCBVDesc.SizeInBytes = (sizeof(material) + 0xff) & ~0xff;
 	//_dev->CreateConstantBufferView(&materialCBVDesc, basicHeapHandle);
 
-	// Register texture SRV
-	for (const std::string& mesh_name : _modelImporter->mesh_names) {
-		std::cout << "Material Name: " << _modelImporter->mesh_material_name[mesh_name] << " Mesh Name is " << mesh_name << std::endl;
-		const std::string& textureFilename = std::string("../model-viewer-dx12/assets/") + _modelImporter->mesh_texture_name[mesh_name];
-		std::cout << "Loading Texture: " << textureFilename << std::endl;
-		TDX12ShaderResource* shaderResource = new TDX12ShaderResource(textureFilename, _dev.Get());
-		g_resourceDescriptorHeapWrapper->AddSRV(_dev.Get(), shaderResource->m_shaderResource, shaderResource->m_textureMetadata.format);
-	}
-
 	if (g_resourceDescriptorHeapWrapper->numResources == 0) {
-		std::cout << "[LOAD ERROR] Model data or Material data seems to be unloaded." << std::endl;
-		exit(EXIT_FAILURE);
+		std::cout << "[Warning] No resources in descriptor heap." << std::endl;
 	}
 
 
@@ -969,19 +767,34 @@ void Application::Run() {
 	float angle = .0;
 
 	bool useGpuSkinning = true;
-	AnimState animState = _modelImporter->GetDefaultAnimState();
+	AnimState animState;
+	if (_modelImporter) {
+		animState = _modelImporter->GetDefaultAnimState();
+	}
+	else {
+		animState.isPlaying = false;
+		animState.isLooping = true;
+		animState.currentAnimIdx = 0;
+		animState.playingTime = 0.f;
+		animState.playingSpeed = 1.f;
+	}
 
 	std::chrono::steady_clock::time_point previousFrameTime = std::chrono::high_resolution_clock::now();
-	// RenderŒn‚ÌCmdList‚Æ‚©Context‚İ‚½‚¢‚È‚Ì‚É‚Ü‚Æ‚ß‚é
+	// Renderç³»ã®CmdListã¨ã‹Contextã¿ãŸã„ãªã®ã«ã¾ã¨ã‚ã‚‹
 	while (true) {
 		{ // check if application ends
 			if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
 				TranslateMessage(&msg);
 				DispatchMessage(&msg);
 			}
-			if (msg.message == WM_QUIT) { // WM_QUIT‚É‚È‚é‚Ì‚ÍI—¹’¼‘OH
+			if (msg.message == WM_QUIT) { // WM_QUITã«ãªã‚‹ã®ã¯çµ‚äº†ç›´å‰ï¼Ÿ
 				break;
 			}
+		}
+
+		if (_shouldReloadModel) {
+			_shouldReloadModel = false;
+			LoadModel(_pendingModelPath);
 		}
 
 		{ // Deltatime
@@ -989,129 +802,138 @@ void Application::Run() {
 			std::chrono::duration<float> deltaTime = currentFrameTime - previousFrameTime;
 			previousFrameTime = currentFrameTime;
 
-			// Update bone matrices
-			_modelImporter->UpdateBoneMatrices(deltaTime.count(), animState);
-			// Upload bone CBV after updating bone matrices
-			std::copy(_modelImporter->boneMatrices, _modelImporter->boneMatrices + 256, _mapTransformMatrix->bones);
+			if (_modelImporter && _mapTransformMatrix) {
+				// Update bone matrices
+				_modelImporter->UpdateBoneMatrices(deltaTime.count(), animState);
+				// Upload bone CBV after updating bone matrices
+				std::copy(_modelImporter->boneMatrices, _modelImporter->boneMatrices + 256, _mapTransformMatrix->bones);
+			}
 		}
 
 		angle += 0.01f;
-		_mapTransformMatrix->world = XMMatrixRotationY(angle) * XMMatrixTranslation(0, 0, 0);
+		if (_mapTransformMatrix) {
+			_mapTransformMatrix->world = XMMatrixRotationY(angle) * XMMatrixTranslation(0, 0, 0);
+		}
 		_mapSceneMatrix->view = _vMatrix;
 		_mapSceneMatrix->proj = _pMatrix;
 
-		// ‚±‚Ì‚Ó‚½‚Â‚ğ‚¢‚ê‚È‚¢‚Æ•`‰æ‚³‚ê‚È‚¢B(”wŒi‚µ‚©o‚È‚¢)
-		_cmdList->RSSetViewports(1, &viewport);
-		_cmdList->RSSetScissorRects(1, &scissorrect);
+		// ã“ã®ãµãŸã¤ã‚’ã„ã‚Œãªã„ã¨æç”»ã•ã‚Œãªã„ã€‚(èƒŒæ™¯ã—ã‹å‡ºãªã„)
+		_graphicsDevice->GetCommandList()->RSSetViewports(1, &viewport);
+		_graphicsDevice->GetCommandList()->RSSetScissorRects(1, &scissorrect);
 
-		_cmdList->SetDescriptorHeaps(1, g_resourceDescriptorHeapWrapper->GetAddressOf());
+		_graphicsDevice->GetCommandList()->SetDescriptorHeaps(1, g_resourceDescriptorHeapWrapper->GetAddressOf());
 
 		//{ // 0. Shadow pipeline (shadow map light depth)
-		//	// depth‚Íbarrier‚Æ‚©‚¢‚ç‚È‚¢?
+		//	// depthã¯barrierã¨ã‹ã„ã‚‰ãªã„?
 		//	{
 		//		D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = _dsvHeap->GetCPUDescriptorHandleForHeapStart();
-		//		dsvHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-		//		_cmdList->OMSetRenderTargets(0, nullptr, false, &dsvHandle); // no need RT
-		//		_cmdList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+		//		dsvHandle.ptr += _graphicsDevice->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+		//		_graphicsDevice->GetCommandList()->OMSetRenderTargets(0, nullptr, false, &dsvHandle); // no need RT
+		//		_graphicsDevice->GetCommandList()->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-		//		_cmdList->SetGraphicsRootSignature(m_rootSignature->GetRootSignaturePointer());
-		//		_cmdList->SetPipelineState(_shadowPipelineState.Get());
+		//		_graphicsDevice->GetCommandList()->SetGraphicsRootSignature(m_rootSignature->GetRootSignaturePointer());
+		//		_graphicsDevice->GetCommandList()->SetPipelineState(_shadowPipelineState.Get());
 		//	}
 
 
 		//	{ // Heap start -> SRV of _postProcessResource -> SRV of _depthBuffer -> SRV of _lightDepthBuffer
 		//		D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle(g_resourceDescriptorHeapWrapper->GetGPUDescriptorHandleForHeapStart());
-		//		auto srvIncSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		//		auto srvIncSize = _graphicsDevice->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		//		gpuHandle.ptr += srvIncSize; // TODO: remove? (SRV of _postProcessResource is the first SRV created from Application::CreateDepthStencilView())
 		//		gpuHandle.ptr += srvIncSize * 2; // TODO: remove?
 
-		//		_cmdList->SetDescriptorHeaps(1, g_resourceDescriptorHeapWrapper->GetAddressOf());
-		//		_cmdList->SetGraphicsRootDescriptorTable(0, g_resourceDescriptorHeapWrapper->GetGPUDescriptorHandleForHeapStart());
+		//		_graphicsDevice->GetCommandList()->SetDescriptorHeaps(1, g_resourceDescriptorHeapWrapper->GetAddressOf());
+		//		_graphicsDevice->GetCommandList()->SetGraphicsRootDescriptorTable(0, g_resourceDescriptorHeapWrapper->GetGPUDescriptorHandleForHeapStart());
 		//	}
 
 		//	for (auto itr : _modelImporter->mesh_vertices) {
 		//		std::string name = itr.first;
-		//		_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		//		_cmdList->IASetVertexBuffers(0, 1, &vertex_buffer_view[name]);
-		//		_cmdList->IASetIndexBuffer(&index_buffer_view[name]);
-		//		_cmdList->DrawIndexedInstanced((UINT)_modelImporter->mesh_indices[name].size(), 1, 0, 0, 0);
+		//		_graphicsDevice->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		//		_graphicsDevice->GetCommandList()->IASetVertexBuffers(0, 1, &vertex_buffer_view[name]);
+		//		_graphicsDevice->GetCommandList()->IASetIndexBuffer(&index_buffer_view[name]);
+		//		_graphicsDevice->GetCommandList()->DrawIndexedInstanced((UINT)_modelImporter->mesh_indices[name].size(), 1, 0, 0, 0);
 		//	}
 		//}
 
 		std::vector<D3D12_RESOURCE_BARRIER> vertexBarriers;
-		{ // 0 pass (skinning with CS)
-			_cmdList->SetComputeRootSignature(_computeRootSignature.Get());
-			_cmdList->SetPipelineState(_computePipelineState.Get());
+		if (_model) { // 0 pass (skinning with CS)
+			_graphicsDevice->GetCommandList()->SetComputeRootSignature(_computeRootSignature.Get());
+			_graphicsDevice->GetCommandList()->SetPipelineState(_computePipelineState.Get());
 			
-			for (const auto& mesh : mesh_draw_info_list) {
-				_cmdList->SetComputeRootDescriptorTable(0, mesh.srvGpuHandle); // t0: InputVertices
-				_cmdList->SetComputeRootDescriptorTable(1, mesh.uavGpuHandle); // u0: OutputVertices
-				_cmdList->SetComputeRootConstantBufferView(2, mesh.cbvGpuHandle); // b0: BoneMatrices
+			for (const auto& mesh : _model->GetMeshDrawInfos()) {
+				_graphicsDevice->GetCommandList()->SetComputeRootDescriptorTable(0, mesh.srvGpuHandle); // t0: InputVertices
+				_graphicsDevice->GetCommandList()->SetComputeRootDescriptorTable(1, mesh.uavGpuHandle); // u0: OutputVertices
+				_graphicsDevice->GetCommandList()->SetComputeRootConstantBufferView(2, mesh.cbvGpuHandle); // b0: BoneMatrices
 
 				UINT threadGroupCount = (mesh.vertexCount + 63) / 64; // 64 vertex per thread group
-				_cmdList->Dispatch(threadGroupCount, 1, 1);
+				_graphicsDevice->GetCommandList()->Dispatch(threadGroupCount, 1, 1);
 			}
 
-			for (const auto& mesh : mesh_draw_info_list) {
+			for (const auto& mesh : _model->GetMeshDrawInfos()) {
 				vertexBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
 					mesh.pOutputVertexBuffer,
 					D3D12_RESOURCE_STATE_UNORDERED_ACCESS, 
 					D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER
 				));
 			}
-			_cmdList->ResourceBarrier((UINT)vertexBarriers.size(), vertexBarriers.data());
+			_graphicsDevice->GetCommandList()->ResourceBarrier((UINT)vertexBarriers.size(), vertexBarriers.data());
 		}
 
 		{ // 1 pass
-			// ‚±‚êunion‚ç‚µ‚¢BTransition, Aliasing, UAV ƒoƒŠƒA‚ª‚ ‚éB
+			// ã“ã‚Œunionã‚‰ã—ã„ã€‚Transition, Aliasing, UAV ãƒãƒªã‚¢ãŒã‚ã‚‹ã€‚
 			D3D12_RESOURCE_BARRIER beforeDrawTransitionDesc = CD3DX12_RESOURCE_BARRIER::Transition(
 				_postProcessResource.Get(),
 				D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
 				D3D12_RESOURCE_STATE_RENDER_TARGET
 			);
-			_cmdList->ResourceBarrier(1, &beforeDrawTransitionDesc);
+			_graphicsDevice->GetCommandList()->ResourceBarrier(1, &beforeDrawTransitionDesc);
 
 			{
 				D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = _dsvHeap->GetCPUDescriptorHandleForHeapStart();
 				D3D12_CPU_DESCRIPTOR_HANDLE postProcessRTVHandle = _rtvHeap->GetCPUDescriptorHandleForHeapStart();
-				postProcessRTVHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) * 2; // g_pRenderTargets[0], g_pRenderTargets[1], _postProcessResource
-				_cmdList->OMSetRenderTargets(1, &postProcessRTVHandle, false, &dsvHandle);
+				postProcessRTVHandle.ptr += _graphicsDevice->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) * 2; // g_pRenderTargets[0], g_pRenderTargets[1], _postProcessResource
+				_graphicsDevice->GetCommandList()->OMSetRenderTargets(1, &postProcessRTVHandle, false, &dsvHandle);
 				// draw
 				float clearColor[] = { 1.0f,1.0f,1.0f,1.0f };
-				_cmdList->ClearRenderTargetView(postProcessRTVHandle, clearColor, 0, nullptr);
-				_cmdList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-				_cmdList->SetGraphicsRootSignature(m_rootSignature->GetRootSignaturePointer());
-				_cmdList->SetPipelineState(_pipelineState.Get());
+				_graphicsDevice->GetCommandList()->ClearRenderTargetView(postProcessRTVHandle, clearColor, 0, nullptr);
+				_graphicsDevice->GetCommandList()->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+				_graphicsDevice->GetCommandList()->SetGraphicsRootSignature(m_rootSignature->GetRootSignaturePointer());
+				_graphicsDevice->GetCommandList()->SetPipelineState(_pipelineState.Get());
 			}
 
 			{// Set Resource DescriptorHeap
 				D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle(g_resourceDescriptorHeapWrapper->GetGPUDescriptorHandleForHeapStart());
-				auto srvIncSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				auto srvIncSize = _graphicsDevice->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 
 				{ // Heap start -> SRV of _postProcessResource -> SRV of _depthBuffer -> SRV of _lightDepthBuffer
 					gpuHandle.ptr += srvIncSize; // TODO: remove? (SRV of _postProcessResource is the first SRV created from Application::CreateDepthStencilView())
-					_cmdList->SetGraphicsRootDescriptorTable(2, gpuHandle);
+					_graphicsDevice->GetCommandList()->SetGraphicsRootDescriptorTable(2, gpuHandle);
 					gpuHandle.ptr += srvIncSize * 2; // TODO: remove?
 				}
 
-				// SetGraphicsRootDescriptorTable: ‚±‚ÌŠÖ”‚Ì–ğŠ„‚ÍADescriptor Heap“à‚Ì“Á’è‚ÌêŠ(handle)‚ÆRoot Signature‚Å’è‹`‚³‚ê‚½ƒXƒƒbƒg‚ğƒoƒCƒ“ƒh‚µAƒVƒF[ƒ_[‘¤‚©‚çˆµ‚¦‚é‚æ‚¤‚É‚·‚éB
-				// SetGraphicsRootDescriptorTable‚Ì‘æˆêˆø”‚ÍRootParameter‚Ìindex(setting in TDX12RootSignature::Initialize)
-				// CBV0, CBV1 -> b0, b1, SRV0, SRV1, SRV2 -> t0, t1, t2‚Æ‚¢‚¤•R‚Ã‚¯‚ğ‚Ü‚Æ‚ß‚Ä‚Å‚«‚é‚ªADescriptorHeap‚ÉÏ‚Ş‡”Ô‚Í‚±‚Ì’Ê‚è‚É‚·‚é•K—v‚ª‚ ‚é‚µA“¯‚¶DescriptorHeapã‚É•Ê‚ÌDescriptorTable‚ğ“K—p‚µ‚½‚¢ê‡‚Íæ“ªƒAƒhƒŒƒX‚ğÄ“x“®‚©‚·•K—v‚ª‚ ‚éB
-				// BasicShader.hlsl‚Ìt1iƒƒbƒVƒ…‚ÌƒeƒNƒXƒ`ƒƒj‚¾‚¯‚ÍXV•p“x‚ªˆÙ‚È‚é‚Ì‚ÅA•Ê‚ÌDescriptorTable‚ÉŠ„‚è“–‚Ä‚½‚¤‚¦‚ÅAƒƒbƒVƒ…‚²‚Æ‚É[1. DesciptorHandle‚ğˆÚ“®‚³‚¹‚é]->[2. DescriptorTable‚ğ“K—p‚·‚é]->[3. •`‰æ‚·‚é]‚Æ‚µ‚Ä‚¢‚éB
-				_cmdList->SetGraphicsRootDescriptorTable(0, gpuHandle);
+				// SetGraphicsRootDescriptorTable: ã“ã®é–¢æ•°ã®å½¹å‰²ã¯ã€Descriptor Heapå†…ã®ç‰¹å®šã®å ´æ‰€(handle)ã¨Root Signatureã§å®šç¾©ã•ã‚ŒãŸã‚¹ãƒ­ãƒƒãƒˆã‚’ãƒã‚¤ãƒ³ãƒ‰ã—ã€ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼å´ã‹ã‚‰æ‰±ãˆã‚‹ã‚ˆã†ã«ã™ã‚‹ã€‚
+				// SetGraphicsRootDescriptorTableã®ç¬¬ä¸€å¼•æ•°ã¯RootParameterã®index(setting in TDX12RootSignature::Initialize)
+				// CBV0, CBV1 -> b0, b1, SRV0, SRV1, SRV2 -> t0, t1, t2ã¨ã„ã†ç´ã¥ã‘ã‚’ã¾ã¨ã‚ã¦ã§ãã‚‹ãŒã€DescriptorHeapã«ç©ã‚€é †ç•ªã¯ã“ã®é€šã‚Šã«ã™ã‚‹å¿…è¦ãŒã‚ã‚‹ã—ã€åŒã˜DescriptorHeapä¸Šã«åˆ¥ã®DescriptorTableã‚’é©ç”¨ã—ãŸã„å ´åˆã¯å…ˆé ­ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’å†åº¦å‹•ã‹ã™å¿…è¦ãŒã‚ã‚‹ã€‚
+				// BasicShader.hlslã®t1ï¼ˆãƒ¡ãƒƒã‚·ãƒ¥ã®ãƒ†ã‚¯ã‚¹ãƒãƒ£ï¼‰ã ã‘ã¯æ›´æ–°é »åº¦ãŒç•°ãªã‚‹ã®ã§ã€åˆ¥ã®DescriptorTableã«å‰²ã‚Šå½“ã¦ãŸã†ãˆã§ã€ãƒ¡ãƒƒã‚·ãƒ¥ã”ã¨ã«[1. DesciptorHandleã‚’ç§»å‹•ã•ã›ã‚‹]->[2. DescriptorTableã‚’é©ç”¨ã™ã‚‹]->[3. æç”»ã™ã‚‹]ã¨ã—ã¦ã„ã‚‹ã€‚
+				_graphicsDevice->GetCommandList()->SetGraphicsRootDescriptorTable(0, gpuHandle);
 				gpuHandle.ptr += srvIncSize * 2; // b0, b1
 
-				_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-				for (const std::string& name : _modelImporter->mesh_names) {
-					_cmdList->SetGraphicsRootDescriptorTable(1, gpuHandle); 
+				_graphicsDevice->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+				if (_model) {
+					int meshIdx = 0;
+					for (const auto& mesh : _model->GetMeshDrawInfos()) {
+						const std::string& name = _modelImporter->mesh_names[meshIdx++];
+						_graphicsDevice->GetCommandList()->SetGraphicsRootDescriptorTable(1, mesh.materialTexGpuHandle);
 
-					_cmdList->IASetVertexBuffers(0, 1, &vertex_buffer_view[name]);
-					_cmdList->IASetIndexBuffer(&index_buffer_view[name]);
-					// _cmdList->DrawInstanced(4, 1, 0, 0);
-					_cmdList->DrawIndexedInstanced((UINT)_modelImporter->mesh_indices[name].size(), 2, 0, 0, 0); // InstanceID=0:model, InstanceID=1:shadow
-					//_cmdList->DrawInstanced(itr.second.size(), 1, 0, 0);
-					gpuHandle.ptr += srvIncSize;
+						auto vbv = _model->GetVBV(name);
+						auto ibv = _model->GetIBV(name);
+						if (vbv && ibv) {
+							_graphicsDevice->GetCommandList()->IASetVertexBuffers(0, 1, vbv);
+							_graphicsDevice->GetCommandList()->IASetIndexBuffer(ibv);
+							_graphicsDevice->GetCommandList()->DrawIndexedInstanced((UINT)_modelImporter->mesh_indices[name].size(), 2, 0, 0, 0);
+						}
+					}
 				}
 			}
 			// draw end
@@ -1120,80 +942,84 @@ void Application::Run() {
 				D3D12_RESOURCE_STATE_RENDER_TARGET,
 				D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
 			);
-			_cmdList->ResourceBarrier(1, &afterDrawTransitionDesc);
+			_graphicsDevice->GetCommandList()->ResourceBarrier(1, &afterDrawTransitionDesc);
 			{ // Vertex barriers
-				UINT index = 0;
-				for (const auto& mesh : mesh_draw_info_list) {
-					vertexBarriers[index++] = CD3DX12_RESOURCE_BARRIER::Transition(
-						mesh.pOutputVertexBuffer,
-						D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
-						D3D12_RESOURCE_STATE_UNORDERED_ACCESS
-					);
+				if (_model) {
+					UINT index = 0;
+					vertexBarriers.clear();
+					for (const auto& mesh : _model->GetMeshDrawInfos()) {
+						vertexBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
+							mesh.pOutputVertexBuffer,
+							D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+							D3D12_RESOURCE_STATE_UNORDERED_ACCESS
+						));
+					}
+					if (!vertexBarriers.empty()) {
+						_graphicsDevice->GetCommandList()->ResourceBarrier((UINT)vertexBarriers.size(), vertexBarriers.data());
+					}
 				}
-				_cmdList->ResourceBarrier((UINT)vertexBarriers.size(), vertexBarriers.data());
 			}
 		}
 		{ // 2 pass
 			// Transition RTV state from PRESENT to RENDER
-			UINT bbIdx = _swapchain.Get()->GetCurrentBackBufferIndex();
 			D3D12_RESOURCE_BARRIER beforeDrawTransitionDesc = CD3DX12_RESOURCE_BARRIER::Transition(
-				g_pRenderTargets[bbIdx].Get(),
+				_graphicsDevice->GetCurrentBackBuffer(),
 				D3D12_RESOURCE_STATE_PRESENT,
 				D3D12_RESOURCE_STATE_RENDER_TARGET
 			);
-			_cmdList->ResourceBarrier(1, &beforeDrawTransitionDesc);
+			_graphicsDevice->GetCommandList()->ResourceBarrier(1, &beforeDrawTransitionDesc);
 
 			{
+				unsigned int bbIdx = _graphicsDevice->GetCurrentBackBufferIndex();
 				D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = _rtvHeap->GetCPUDescriptorHandleForHeapStart();
-				if (bbIdx == 1) rtvHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+				rtvHandle.ptr += bbIdx * _graphicsDevice->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 				D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = _dsvHeap->GetCPUDescriptorHandleForHeapStart();
-				_cmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
-				_cmdList->SetGraphicsRootSignature(_canvasRootSignature.Get());
-				_cmdList->SetPipelineState(_canvasPipelineState.Get());
+				_graphicsDevice->GetCommandList()->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
+				_graphicsDevice->GetCommandList()->SetGraphicsRootSignature(_canvasRootSignature.Get());
+				_graphicsDevice->GetCommandList()->SetPipelineState(_canvasPipelineState.Get());
 			}
 
 			{
 				{// register 1 pass as texture
 					// SRV of _postProcessResource is the first SRV created from Application::CreateDepthStencilView()
 					auto handle = g_resourceDescriptorHeapWrapper->GetGPUDescriptorHandleForHeapStart();
-					_cmdList->SetGraphicsRootDescriptorTable(0, handle);
+					_graphicsDevice->GetCommandList()->SetGraphicsRootDescriptorTable(0, handle);
 				}
 
-				_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-				_cmdList->IASetVertexBuffers(0, 1, &_canvasVBV);
-				_cmdList->DrawInstanced(4, 1, 0, 0);
+				_graphicsDevice->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+				_graphicsDevice->GetCommandList()->IASetVertexBuffers(0, 1, &_canvasVBV);
+				_graphicsDevice->GetCommandList()->DrawInstanced(4, 1, 0, 0);
 			}
 			{ // ImGui draws to RT set by OMSetRenderTargets, so make commands for rendering ImGui while the state of that RT is D3D12_RESOURCE_STATE_RENDER_TARGET
 				DrawImGui(useGpuSkinning, animState);
-				ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), _cmdList.Get());
+				ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), _graphicsDevice->GetCommandList());
 			}
 
 			auto afterDrawTransitionDesc = CD3DX12_RESOURCE_BARRIER::Transition(
-				g_pRenderTargets[bbIdx].Get(),
+				_graphicsDevice->GetCurrentBackBuffer(),
 				D3D12_RESOURCE_STATE_RENDER_TARGET,
 				D3D12_RESOURCE_STATE_PRESENT
 			);
-			_cmdList->ResourceBarrier(1, &afterDrawTransitionDesc);
+			_graphicsDevice->GetCommandList()->ResourceBarrier(1, &afterDrawTransitionDesc);
 		}
 
 
-		_cmdList->Close();
-		// ƒRƒ}ƒ“ƒhƒŠƒXƒg‚Í•¡”“n‚¹‚éHƒRƒ}ƒ“ƒhƒŠƒXƒg‚ÌƒŠƒXƒg‚ğì¬
-		ID3D12CommandList* cmdlists[] = { _cmdList.Get() };
-		_cmdQueue->ExecuteCommandLists(1, cmdlists);
+		_graphicsDevice->GetCommandList()->Close();
+		// ã‚³ãƒãƒ³ãƒ‰ãƒªã‚¹ãƒˆã¯è¤‡æ•°æ¸¡ã›ã‚‹ï¼Ÿã‚³ãƒãƒ³ãƒ‰ãƒªã‚¹ãƒˆã®ãƒªã‚¹ãƒˆã‚’ä½œæˆ
+		ID3D12CommandList* cmdlists[] = { _graphicsDevice->GetCommandList() };
+		_graphicsDevice->GetCommandQueue()->ExecuteCommandLists(1, cmdlists);
 
-		// Fence‚É‚æ‚é“¯Šú‘Ò‚¿
-		WaitDrawDone();
+		// Fenceã«ã‚ˆã‚‹åŒæœŸå¾…ã¡
+		_graphicsDevice->WaitDrawDone();
 
-		_cmdAllocator->Reset();
-		_cmdList->Reset(_cmdAllocator.Get(), _pipelineState.Get());
-		//ƒtƒŠƒbƒv 1‚Í‘Ò‚¿frame”(‘Ò‚Â‚×‚«vsync‚Ì”), 2‚É‚·‚é‚Æ30fps‚É‚È‚é
-		_swapchain->Present(2, 0);
+		_graphicsDevice->GetCommandAllocator()->Reset();
+		_graphicsDevice->GetCommandList()->Reset(_graphicsDevice->GetCommandAllocator(), _pipelineState.Get());
+		//ãƒ•ãƒªãƒƒãƒ— 1ã¯å¾…ã¡frameæ•°(å¾…ã¤ã¹ãvsyncã®æ•°), 2ã«ã™ã‚‹ã¨30fpsã«ãªã‚‹
+		_graphicsDevice->GetSwapChain()->Present(2, 0);
 	}
 }
 
 void Application::Terminate() {
 	CleanupImGui();
-	delete windowManager;
-	delete _modelImporter;
+	// windowManager ã¨ _modelImporter ã¯ unique_ptr ãªã®ã§ã€Application ã®ç ´æ£„æ™‚ã«è‡ªå‹•çš„ã«å‰Šé™¤ã•ã‚Œã¾ã™ã€‚
 }

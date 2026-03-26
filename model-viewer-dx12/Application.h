@@ -1,9 +1,15 @@
-#pragma once
+Ôªø#pragma once
 
 #include "Common.h"
 #include "Types.h"
 #include "ModelImporter.h"
 #include "WindowManager.h"
+#include "Renderer/DX12GraphicsDevice.h"
+#include "Renderer/DX12DescriptorHeap.h"
+#include "Renderer/DX12ConstantBuffer.h"
+#include "Renderer/DX12RootSignature.h"
+#include "Renderer/Model.h"
+#include <memory>
 
 using namespace DirectX;
 
@@ -16,28 +22,18 @@ private:
 	XMMATRIX _pMatrix = XMMatrixIdentity();
 	ModelViewer::TransformMatrices* _mapTransformMatrix = nullptr;
 	ModelViewer::SceneMatrices* _mapSceneMatrix = nullptr;
+	std::unique_ptr<class TDX12ConstantBuffer> _transformCB;
+	std::unique_ptr<class TDX12ConstantBuffer> _sceneCB;
 
-	// DXGI
-	Microsoft::WRL::ComPtr<IDXGIFactory6> _dxgiFactory = nullptr; // DXGI interface
-	Microsoft::WRL::ComPtr<IDXGISwapChain4> _swapchain = nullptr; // SwapChain
 	// DX12
-	Microsoft::WRL::ComPtr<ID3D12Device> _dev = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> _cmdAllocator = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _cmdList = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12CommandQueue> _cmdQueue = nullptr;
+	std::unique_ptr<DX12GraphicsDevice> _graphicsDevice;
 
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> g_pRenderTargets[2];
-	// Depth Buffer
-	Microsoft::WRL::ComPtr<ID3D12Resource> _depthBuffer = nullptr;
-	// Fence
-	Microsoft::WRL::ComPtr<ID3D12Fence> _fence = nullptr;
-	UINT64 _fenceVal = 0;
 	// Pipeline State
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipelineState = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> _shadowPipelineState = nullptr;
 
-	class TDX12RootSignature* m_rootSignature = nullptr;
+	std::unique_ptr<class TDX12RootSignature> m_rootSignature;
 
 	// Pipeline settings of pass for Post Process
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> _canvasRootSignature = nullptr;
@@ -46,9 +42,13 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> _computeRootSignature = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> _computePipelineState = nullptr;
 
-	static class TDX12DescriptorHeap* g_resourceDescriptorHeapWrapper; // Descriptor Heap Wrapper for CBV, SRV, UAV
+	static std::unique_ptr<TDX12DescriptorHeap> g_resourceDescriptorHeapWrapper; // Descriptor Heap Wrapper for CBV, SRV, UAV
+	Microsoft::WRL::ComPtr<ID3D12Resource> _depthBuffer = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtvHeap = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _dsvHeap = nullptr;
+
+	// Model resource management (migrated to Model class)
+	std::unique_ptr<Model> _model;
 
 	// for Post Process Additional Path
 	Microsoft::WRL::ComPtr<ID3D12Resource> _postProcessResource = nullptr;
@@ -56,18 +56,12 @@ private:
 	// for shadow map
 	Microsoft::WRL::ComPtr<ID3D12Resource> _lightDepthBuffer = nullptr; // shadow map
 
-	// Vertex
-	std::map<std::string, D3D12_VERTEX_BUFFER_VIEW> vertex_buffer_view;
+	// Vertex (migrated to Model class)
 	D3D12_VERTEX_BUFFER_VIEW _canvasVBV = {}; // for post process canvas
-	std::map<std::string, D3D12_INDEX_BUFFER_VIEW> index_buffer_view;
-	std::vector<ModelViewer::MeshDrawInfo> mesh_draw_info_list;
 
-	ModelImporter* _modelImporter = nullptr; // ÇπÇﬂÇƒshared_ptrÇ…ÇµÇΩÇ¢Ç™åªèÛÇ§Ç‹Ç≠Ç¢Ç¡ÇƒÇ»Ç¢ÅB
-	TWindowManager* windowManager = nullptr;
+	std::unique_ptr<ModelImporter> _modelImporter;
+	std::unique_ptr<TWindowManager> windowManager;
 
-	void CreateDevice();
-	void CreateCommandList(D3D12_COMMAND_LIST_TYPE);
-	void CreateSwapChain();
 	void CreateDepthStencilView();
 	bool CreatePipelineState();
 	void CreateCanvasPipelineState();
@@ -75,15 +69,22 @@ private:
 	void CreateCBV();
 	void CreatePostProcessResourceAndView();
 
-	void WaitDrawDone();
+	bool LoadModel(const std::string& path);
+	void ReleaseModelResources();
 
 	void SetVerticesInfo();
 	void SetupComputePass();
+	void SetupModelResources(); // „É¢„Éá„É´„Åî„Å®„ÅÆ„Éê„ÉÉ„Éï„Ç°‰ΩúÊàê„ÇíÂàÜÈõ¢
 
 	// ImGui
 	void SetupImGui();
 	void DrawImGui(bool &useGpuSkinning, ModelViewer::AnimState& animState);
 	void CleanupImGui();
+
+	// „Éï„Ç°„Ç§„É´ÈÅ∏Êäû
+	void OpenFileDialog();
+	std::string _pendingModelPath = "";
+	bool _shouldReloadModel = false;
 
 	// Singleton: private constructor
 	// not allow to copy but allow to move
@@ -92,7 +93,7 @@ private:
 	void operator=(const Application&) = delete;
 
 	// Util
-	void CheckError(LPCSTR msg, HRESULT result); // UE4ÇÃéQçlÇ…Ç‡Ç¡Ç∆ó«Ç≠Ç∑ÇÈ
+	void CheckError(const char* msg, HRESULT result = S_OK); // UE4„ÅÆÂèÇËÄÉ„Å´„ÇÇ„Å£„Å®ËâØ„Åè„Åô„Çã
 
 public:
 	static Application& GetInstance() {

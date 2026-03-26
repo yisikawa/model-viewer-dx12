@@ -190,6 +190,8 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Renderer\DX12ConstantBuffer.cpp" />
     <ClCompile Include="Renderer\DX12DescriptorHeap.cpp" />
+    <ClCompile Include="Renderer\Model.cpp" />
+    <ClCompile Include="Renderer\DX12GraphicsDevice.cpp" />
     <ClCompile Include="Renderer\DX12PipelineState.cpp" />
     <ClCompile Include="Renderer\DX12RootSignature.cpp" />
     <ClCompile Include="Renderer\DX12ShaderResource.cpp" />
@@ -209,6 +211,8 @@
     <ClInclude Include="ModelImporter.h" />
     <ClInclude Include="Renderer\DX12ConstantBuffer.h" />
     <ClInclude Include="Renderer\DX12DescriptorHeap.h" />
+    <ClInclude Include="Renderer\Model.h" />
+    <ClInclude Include="Renderer\DX12GraphicsDevice.h" />
     <ClInclude Include="Renderer\DX12PipelineState.h" />
     <ClInclude Include="Common.h" />
     <ClInclude Include="Renderer\DX12RootSignature.h" />

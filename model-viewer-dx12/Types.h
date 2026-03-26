@@ -36,9 +36,11 @@ namespace ModelViewer {
 	struct MeshDrawInfo {
 		D3D12_GPU_DESCRIPTOR_HANDLE srvGpuHandle;
 		D3D12_GPU_DESCRIPTOR_HANDLE uavGpuHandle;
-		D3D12_GPU_VIRTUAL_ADDRESS cbvGpuHandle; // TODO
+		D3D12_GPU_VIRTUAL_ADDRESS cbvGpuHandle;
 		UINT vertexCount;
+		UINT indexCount;
 		ID3D12Resource* pOutputVertexBuffer;
+		D3D12_GPU_DESCRIPTOR_HANDLE materialTexGpuHandle;
 	};
 
 	// 52 bytes

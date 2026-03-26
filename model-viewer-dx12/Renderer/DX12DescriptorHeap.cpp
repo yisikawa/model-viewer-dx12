@@ -1,7 +1,7 @@
-#include "DX12DescriptorHeap.h"
+﻿#include "DX12DescriptorHeap.h"
 #include "../Types.h"
 
-static constexpr size_t NUM_DESCRIPTORS = 128; 
+static constexpr size_t NUM_DESCRIPTORS = 512; 
 // 0~63:	static locations for Descriptor Table (resources need to be continuous), the resource and its Descriptor Heap are stored in the order they are added.
 // 64~127:	dynamic locations for ImGui or single use of SRV or like that. Managed by the pooling way
 
@@ -47,6 +47,46 @@ D3D12_GPU_DESCRIPTOR_HANDLE TDX12DescriptorHeap::AddSRV(ID3D12Device* pDev, ID3D
 	return D3D12_GPU_DESCRIPTOR_HANDLE(m_heapStartGPU.ptr + numResources++ * m_heapHandleIncSize);
 }
 
+D3D12_GPU_DESCRIPTOR_HANDLE TDX12DescriptorHeap::AddSRV(ID3D12Device* pDev, ID3D12Resource* pBuffer, UINT numElements, UINT stride) {
+	if (pBuffer == nullptr) return D3D12_GPU_DESCRIPTOR_HANDLE();
+
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
+	cpuHandle.ptr = m_heapStartCPU.ptr + m_heapHandleIncSize * numResources;
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Buffer.FirstElement = 0;
+	srvDesc.Buffer.NumElements = numElements;
+	srvDesc.Buffer.StructureByteStride = stride;
+	srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+	pDev->CreateShaderResourceView(pBuffer, &srvDesc, cpuHandle);
+
+	return D3D12_GPU_DESCRIPTOR_HANDLE(m_heapStartGPU.ptr + numResources++ * m_heapHandleIncSize);
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE TDX12DescriptorHeap::AddUAV(ID3D12Device* pDev, ID3D12Resource* pBuffer, UINT numElements, UINT stride) {
+	if (pBuffer == nullptr) return D3D12_GPU_DESCRIPTOR_HANDLE();
+
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
+	cpuHandle.ptr = m_heapStartCPU.ptr + m_heapHandleIncSize * numResources;
+
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+	uavDesc.Buffer.FirstElement = 0;
+	uavDesc.Buffer.NumElements = numElements;
+	uavDesc.Buffer.StructureByteStride = stride;
+	uavDesc.Buffer.CounterOffsetInBytes = 0;
+	uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+
+	pDev->CreateUnorderedAccessView(pBuffer, nullptr, &uavDesc, cpuHandle);
+
+	return D3D12_GPU_DESCRIPTOR_HANDLE(m_heapStartGPU.ptr + numResources++ * m_heapHandleIncSize);
+}
+
 void TDX12DescriptorHeap::AllocDynamic(D3D12_CPU_DESCRIPTOR_HANDLE* cpuDescHandle, D3D12_GPU_DESCRIPTOR_HANDLE* gpuDescHandle) {
 	if (m_freeIndices.size() == 0) {
 		std::cout << "The number of dynamic Descriptor Heap is full!" << std::endl;
@@ -82,7 +122,16 @@ TDX12DescriptorHeap::TDX12DescriptorHeap(ID3D12Device* pDev) {
 	m_heapStartCPU = m_descriptorHeap->GetCPUDescriptorHandleForHeapStart();
 	m_heapStartGPU = m_descriptorHeap->GetGPUDescriptorHandleForHeapStart();
 	m_heapHandleIncSize = pDev->GetDescriptorHandleIncrementSize(descHeapDesc.Type);
+	numResources = 0;
 
+	for (size_t i = 64; i < NUM_DESCRIPTORS; ++i) {
+		m_freeIndices.push_back(i);
+	}
+}
+
+void TDX12DescriptorHeap::Reset(size_t keepCount) {
+	numResources = keepCount;
+	m_freeIndices.clear();
 	for (size_t i = 64; i < NUM_DESCRIPTORS; ++i) {
 		m_freeIndices.push_back(i);
 	}
