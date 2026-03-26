@@ -518,8 +518,8 @@ void Application::Run() {
 		if (!ImGui::GetIO().WantCaptureMouse) {
 			float wheel = ImGui::GetIO().MouseWheel;
 			if (wheel != 0.0f) {
-				m_modelScale += wheel * 0.25f;
-				m_modelScale = std::clamp(m_modelScale, 0.1f, 10.0f);
+				m_modelScale += wheel * 0.2f;
+				m_modelScale = std::clamp(m_modelScale, 0.1f, 40.0f);
 			}
 		}
 

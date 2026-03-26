@@ -1,4 +1,4 @@
-﻿#include "ModelImporter.h"
+#include "ModelImporter.h"
 
 // ControlPoints = 頂点バッファ、 PolugonVertexCount = 頂点座標？
 void ModelImporter::LoadMesh(aiMesh* mesh) {
