@@ -339,6 +339,7 @@ void Application::DrawImGui(bool &useGpuSkinning, ModelViewer::AnimState& animSt
 			ImGui::EndCombo();
 		}
 	}
+	ImGui::SliderFloat("Scale", &m_modelScale, 1.0f, 100.0f);
 	ImGui::End();
 	ImGui::Render();
 }
@@ -485,7 +486,7 @@ void Application::Run() {
 			std::copy(_modelImporter->boneMatrices, _modelImporter->boneMatrices + 256, _mapTransformMatrix->bones);
 		}
 		angle += 0.01f;
-		if (_mapTransformMatrix) _mapTransformMatrix->world = DirectX::XMMatrixRotationY(angle);
+		if (_mapTransformMatrix) _mapTransformMatrix->world = DirectX::XMMatrixScaling(m_modelScale, m_modelScale, m_modelScale) * DirectX::XMMatrixRotationY(angle);
 		_mapSceneMatrix->view = _vMatrix; _mapSceneMatrix->proj = _pMatrix;
 
 		auto cmd = _graphicsDevice->GetCommandList();

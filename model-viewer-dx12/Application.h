@@ -107,6 +107,7 @@ namespace ModelViewer {
 
 		bool _shouldReloadModel = false;
 		std::string _pendingModelPath;
+		float m_modelScale = 1.0f;
 	};
 
 }
