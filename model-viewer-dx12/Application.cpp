@@ -316,7 +316,7 @@ void Application::SetupImGui() {
 	ImGui_ImplDX12_Init(&init_info);
 }
 
-void Application::DrawImGui(bool &useGpuSkinning, ModelViewer::AnimState& animState) {
+void Application::DrawImGui() {
 	ImGui_ImplDX12_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
@@ -328,13 +328,13 @@ void Application::DrawImGui(bool &useGpuSkinning, ModelViewer::AnimState& animSt
 		ImGui::EndMainMenuBar();
 	}
 	ImGui::Begin("Animation Settings");
-	ImGui::Checkbox("Use GPU Skinning", &useGpuSkinning);
-	ImGui::Checkbox("Is Playing", &animState.isPlaying);
-	ImGui::SliderFloat("Playing Time", &animState.playingTime, 0.f, animState.currentAnimDuration);
-	if (animState.sceneAnimCount > 0) {
-		if (ImGui::BeginCombo("Selected Animation", animState.animationNames[animState.currentAnimIdx].c_str())) {
-			for (int i = 0; i < (int)animState.animationNames.size(); ++i) {
-				if (ImGui::Selectable(animState.animationNames[i].c_str(), i == animState.currentAnimIdx)) animState.currentAnimIdx = i;
+	ImGui::Checkbox("Use GPU Skinning", &m_useGpuSkinning);
+	ImGui::Checkbox("Is Playing", &m_animState.isPlaying);
+	ImGui::SliderFloat("Playing Time", &m_animState.playingTime, 0.f, m_animState.currentAnimDuration);
+	if (m_animState.sceneAnimCount > 0) {
+		if (ImGui::BeginCombo("Selected Animation", m_animState.animationNames[m_animState.currentAnimIdx].c_str())) {
+			for (int i = 0; i < (int)m_animState.animationNames.size(); ++i) {
+				if (ImGui::Selectable(m_animState.animationNames[i].c_str(), i == m_animState.currentAnimIdx)) m_animState.currentAnimIdx = i;
 			}
 			ImGui::EndCombo();
 		}
@@ -390,6 +390,7 @@ bool Application::LoadModel(const std::string& path) {
 		_model.reset();
 		return false;
 	}
+	m_animState = _modelImporter->GetDefaultAnimState();
 	CreateCBV();
 	SetupComputePass();
 	return true;
@@ -468,9 +469,7 @@ void Application::Run() {
 	D3D12_RECT sr = { 0, 0, (LONG)windowManager->GetWidth(), (LONG)windowManager->GetHeight() };
 	MSG msg = {};
 	float angle = 0.0f;
-	bool useGpuSkinning = true;
-	AnimState animState;
-	if (_modelImporter) animState = _modelImporter->GetDefaultAnimState();
+	if (_modelImporter) m_animState = _modelImporter->GetDefaultAnimState();
 	auto prevTime = std::chrono::high_resolution_clock::now();
 	
 	while (msg.message != WM_QUIT) {
@@ -482,10 +481,10 @@ void Application::Run() {
 		auto currTime = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<float> dt = currTime - prevTime; prevTime = currTime;
 		if (_modelImporter && _mapTransformMatrix) {
-			_modelImporter->UpdateBoneMatrices(dt.count(), animState);
+			_modelImporter->UpdateBoneMatrices(dt.count(), m_animState);
 			std::copy(_modelImporter->boneMatrices, _modelImporter->boneMatrices + 256, _mapTransformMatrix->bones);
 		}
-		angle += 0.01f;
+		//angle += 0.01f;
 		if (_mapTransformMatrix) _mapTransformMatrix->world = DirectX::XMMatrixScaling(m_modelScale, m_modelScale, m_modelScale) * DirectX::XMMatrixRotationY(angle);
 		_mapSceneMatrix->view = _vMatrix; _mapSceneMatrix->proj = _pMatrix;
 
@@ -495,11 +494,13 @@ void Application::Run() {
 
 		std::vector<D3D12_RESOURCE_BARRIER> barriers;
 		if (_model) { 
-			_model->ExecuteSkinning(cmd, _computeRootSignature.Get(), _computePipelineState.Get());
-			for (const auto& mesh : _model->GetMeshDrawInfos()) {
-				barriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(mesh.pOutputVertexBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+			if (m_useGpuSkinning) {
+				_model->ExecuteSkinning(cmd, _computeRootSignature.Get(), _computePipelineState.Get());
+				for (const auto& mesh : _model->GetMeshDrawInfos()) {
+					barriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(mesh.pOutputVertexBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+				}
+				cmd->ResourceBarrier((UINT)barriers.size(), barriers.data());
 			}
-			cmd->ResourceBarrier((UINT)barriers.size(), barriers.data());
 		}
 
 		auto barrierRT = CD3DX12_RESOURCE_BARRIER::Transition(_postProcessResource.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -533,7 +534,7 @@ void Application::Run() {
 		cmd->IASetVertexBuffers(0, 1, &_canvasVBV);
 		cmd->DrawInstanced(4, 1, 0, 0);
 
-		DrawImGui(useGpuSkinning, animState);
+		DrawImGui();
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd);
 
 		auto barrierBB_Pres = CD3DX12_RESOURCE_BARRIER::Transition(_graphicsDevice->GetCurrentBackBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);

@@ -58,7 +58,7 @@ namespace ModelViewer {
 		void ReleaseModelResources();
 		
 		void SetupImGui();
-		void DrawImGui(bool &useGpuSkinning, ModelViewer::AnimState& animState);
+		void DrawImGui();
 		void CleanupImGui();
 
 		void SetupComputePass();
@@ -108,6 +108,9 @@ namespace ModelViewer {
 		bool _shouldReloadModel = false;
 		std::string _pendingModelPath;
 		float m_modelScale = 1.0f;
+
+		ModelViewer::AnimState m_animState;
+		bool m_useGpuSkinning = true;
 	};
 
 }
