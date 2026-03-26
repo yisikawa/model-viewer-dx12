@@ -269,8 +269,14 @@ void Application::CreateShadowMapPipelineState(D3D12_GRAPHICS_PIPELINE_STATE_DES
 
 void Application::CreateCBV() {
 	DirectX::XMMATRIX mMatrix = DirectX::XMMatrixIdentity();
-	DirectX::XMVECTOR eyePos = { 0.0f, 13.0f, -30.0f }; 
-	DirectX::XMVECTOR targetPos = { 0.0f, 10.5f, 0.0f }; 
+	DirectX::XMVECTOR targetPos = DirectX::XMLoadFloat3(&m_cameraTarget);
+	DirectX::XMVECTOR eyePos = DirectX::XMVectorSet(
+		m_cameraDistance * cosf(m_cameraPitch) * sinf(m_cameraYaw),
+		m_cameraDistance * sinf(m_cameraPitch),
+		-m_cameraDistance * cosf(m_cameraPitch) * cosf(m_cameraYaw),
+		0.0f
+	) + targetPos;
+
 	DirectX::XMVECTOR upVec = { 0.0f, 1.0f, 0.0f };
 	_vMatrix = DirectX::XMMatrixLookAtLH(eyePos, targetPos, upVec);
 	_pMatrix = DirectX::XMMatrixPerspectiveFovLH(DirectX::XM_PIDIV2, static_cast<float>(windowManager->GetWidth()) / static_cast<float>(windowManager->GetHeight()), 1.0f, 200.0f);
@@ -468,7 +474,6 @@ void Application::Run() {
 	D3D12_VIEWPORT vp = { 0, 0, (float)windowManager->GetWidth(), (float)windowManager->GetHeight(), 0.f, 1.f };
 	D3D12_RECT sr = { 0, 0, (LONG)windowManager->GetWidth(), (LONG)windowManager->GetHeight() };
 	MSG msg = {};
-	float angle = 0.0f;
 	if (_modelImporter) m_animState = _modelImporter->GetDefaultAnimState();
 	auto prevTime = std::chrono::high_resolution_clock::now();
 	
@@ -484,8 +489,27 @@ void Application::Run() {
 			_modelImporter->UpdateBoneMatrices(dt.count(), m_animState);
 			std::copy(_modelImporter->boneMatrices, _modelImporter->boneMatrices + 256, _mapTransformMatrix->bones);
 		}
-		//angle += 0.01f;
-		if (_mapTransformMatrix) _mapTransformMatrix->world = DirectX::XMMatrixScaling(m_modelScale, m_modelScale, m_modelScale) * DirectX::XMMatrixRotationY(angle);
+
+		// カメラ回転処理
+		if (ImGui::IsMouseDown(0) && !ImGui::GetIO().WantCaptureMouse) {
+			auto delta = ImGui::GetIO().MouseDelta;
+			m_cameraYaw -= delta.x * 0.005f;
+			m_cameraPitch += delta.y * 0.005f;
+			// ジンバルロック防止
+			m_cameraPitch = std::clamp(m_cameraPitch, -DirectX::XM_PIDIV2 + 0.01f, DirectX::XM_PIDIV2 - 0.01f);
+		}
+
+		DirectX::XMVECTOR targetPos = DirectX::XMLoadFloat3(&m_cameraTarget);
+		DirectX::XMVECTOR eyePos = DirectX::XMVectorSet(
+			m_cameraDistance * cosf(m_cameraPitch) * sinf(m_cameraYaw),
+			m_cameraDistance * sinf(m_cameraPitch),
+			-m_cameraDistance * cosf(m_cameraPitch) * cosf(m_cameraYaw),
+			1.0f
+		) + targetPos;
+
+		_vMatrix = DirectX::XMMatrixLookAtLH(eyePos, targetPos, DirectX::XMVectorSet(0, 1, 0, 0));
+
+		if (_mapTransformMatrix) _mapTransformMatrix->world = DirectX::XMMatrixScaling(m_modelScale, m_modelScale, m_modelScale);
 		_mapSceneMatrix->view = _vMatrix; _mapSceneMatrix->proj = _pMatrix;
 
 		auto cmd = _graphicsDevice->GetCommandList();
