@@ -323,9 +323,6 @@ void Application::SetupImGui() {
 }
 
 void Application::DrawImGui() {
-	ImGui_ImplDX12_NewFrame();
-	ImGui_ImplWin32_NewFrame();
-	ImGui::NewFrame();
 	if (ImGui::BeginMainMenuBar()) {
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Open...")) OpenFileDialog();
@@ -345,7 +342,7 @@ void Application::DrawImGui() {
 			ImGui::EndCombo();
 		}
 	}
-	ImGui::SliderFloat("Scale", &m_modelScale, 1.0f, 100.0f);
+
 	ImGui::End();
 	ImGui::Render();
 }
@@ -482,6 +479,10 @@ void Application::Run() {
 			TranslateMessage(&msg); DispatchMessage(&msg);
 			if (msg.message == WM_QUIT) break;
 		}
+
+		ImGui_ImplDX12_NewFrame();
+		ImGui_ImplWin32_NewFrame();
+		ImGui::NewFrame();
 		if (_shouldReloadModel) { _shouldReloadModel = false; LoadModel(_pendingModelPath); }
 		auto currTime = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<float> dt = currTime - prevTime; prevTime = currTime;
@@ -510,6 +511,15 @@ void Application::Run() {
 				m_cameraPitch += delta.y * 0.005f;
 				// ジンバルロック防止
 				m_cameraPitch = std::clamp(m_cameraPitch, -DirectX::XM_PIDIV2 + 0.01f, DirectX::XM_PIDIV2 - 0.01f);
+			}
+		}
+
+		// モデルスケール操作
+		if (!ImGui::GetIO().WantCaptureMouse) {
+			float wheel = ImGui::GetIO().MouseWheel;
+			if (wheel != 0.0f) {
+				m_modelScale += wheel * 0.25f;
+				m_modelScale = std::clamp(m_modelScale, 0.1f, 10.0f);
 			}
 		}
 
