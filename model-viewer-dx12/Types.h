@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 namespace ModelViewer {
 	// NOTICE: 
@@ -41,6 +41,8 @@ namespace ModelViewer {
 		UINT indexCount;
 		ID3D12Resource* pOutputVertexBuffer;
 		D3D12_GPU_DESCRIPTOR_HANDLE materialTexGpuHandle;
+		D3D12_VERTEX_BUFFER_VIEW vbv;
+		D3D12_INDEX_BUFFER_VIEW ibv;
 	};
 
 	// 52 bytes

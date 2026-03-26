@@ -24,6 +24,9 @@ public:
     // モデルリソースの初期化
     bool Initialize(ID3D12Device* device, class ModelImporter* importer, const std::string& modelDir, class TDX12DescriptorHeap* descriptorHeap);
 
+    // スキニング計算の実行 (Compute Shader)
+    void ExecuteSkinning(ID3D12GraphicsCommandList* cmdList, ID3D12RootSignature* rootSig, ID3D12PipelineState* pso);
+
     // ボーン行列などの定数バッファアドレスをセット
     void SetBoneCBV(D3D12_GPU_VIRTUAL_ADDRESS address);
 

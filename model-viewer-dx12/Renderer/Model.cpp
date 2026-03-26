@@ -61,17 +61,15 @@ bool Model::SetupMeshResources(ID3D12Device* device, ModelImporter* importer, TD
         indexBuffer->Unmap(0, nullptr);
 
         // Views
-        D3D12_VERTEX_BUFFER_VIEW vbv = {};
-        vbv.BufferLocation = pOutputVertexBuffer->GetGPUVirtualAddress();
-        vbv.SizeInBytes = (UINT)vertices.size() * sizeof(ModelViewer::Vertex);
-        vbv.StrideInBytes = sizeof(ModelViewer::Vertex);
-        m_vbViews[name] = vbv;
+        meshInfo.vbv.BufferLocation = pOutputVertexBuffer->GetGPUVirtualAddress();
+        meshInfo.vbv.SizeInBytes = (UINT)vertices.size() * sizeof(ModelViewer::Vertex);
+        meshInfo.vbv.StrideInBytes = sizeof(ModelViewer::Vertex);
+        m_vbViews[name] = meshInfo.vbv;
 
-        D3D12_INDEX_BUFFER_VIEW ibv = {};
-        ibv.BufferLocation = indexBuffer->GetGPUVirtualAddress();
-        ibv.Format = DXGI_FORMAT_R16_UINT;
-        ibv.SizeInBytes = (UINT)indices.size() * sizeof(unsigned short);
-        m_ibViews[name] = ibv;
+        meshInfo.ibv.BufferLocation = indexBuffer->GetGPUVirtualAddress();
+        meshInfo.ibv.Format = DXGI_FORMAT_R16_UINT;
+        meshInfo.ibv.SizeInBytes = (UINT)indices.size() * sizeof(unsigned short);
+        m_ibViews[name] = meshInfo.ibv;
 
         // (3) Input Vertex Buffer (SRV for Skinning CS)
         D3D12_RESOURCE_DESC resdescInput = CD3DX12_RESOURCE_DESC::Buffer(vertices.size() * sizeof(ModelViewer::Vertex));
@@ -120,6 +118,22 @@ bool Model::SetupTextures(ID3D12Device* device, ModelImporter* importer, const s
     return true;
 }
 
+void Model::ExecuteSkinning(ID3D12GraphicsCommandList* cmdList, ID3D12RootSignature* rootSig, ID3D12PipelineState* pso) {
+    if (!cmdList || !rootSig || !pso) return;
+
+    cmdList->SetComputeRootSignature(rootSig);
+    cmdList->SetPipelineState(pso);
+
+    for (const auto& mesh : m_meshDrawInfos) {
+        cmdList->SetComputeRootDescriptorTable(0, mesh.srvGpuHandle); // t0: InputVertices
+        cmdList->SetComputeRootDescriptorTable(1, mesh.uavGpuHandle); // u0: OutputVertices
+        cmdList->SetComputeRootConstantBufferView(2, mesh.cbvGpuHandle); // b0: BoneMatrices
+
+        UINT threadGroupCount = (mesh.vertexCount + 63) / 64; // 64 vertex per thread group
+        cmdList->Dispatch(threadGroupCount, 1, 1);
+    }
+}
+
 void Model::SetBoneCBV(D3D12_GPU_VIRTUAL_ADDRESS address) {
     for (auto& mesh : m_meshDrawInfos) {
         mesh.cbvGpuHandle = address;
@@ -127,5 +141,16 @@ void Model::SetBoneCBV(D3D12_GPU_VIRTUAL_ADDRESS address) {
 }
 
 void Model::Draw(ID3D12GraphicsCommandList* cmdList) {
-    // 描画ロジック (後のフェーズで実装)
+    if (!cmdList) return;
+
+    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    for (const auto& mesh : m_meshDrawInfos) {
+        // テクスチャのセット (RootParameterIndex 1 と仮定)
+        cmdList->SetGraphicsRootDescriptorTable(1, mesh.materialTexGpuHandle);
+
+        cmdList->IASetVertexBuffers(0, 1, &mesh.vbv);
+        cmdList->IASetIndexBuffer(&mesh.ibv);
+        cmdList->DrawIndexedInstanced(mesh.indexCount, 1, 0, 0, 0);
+    }
 }

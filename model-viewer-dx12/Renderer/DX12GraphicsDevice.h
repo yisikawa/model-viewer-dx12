@@ -27,6 +27,7 @@ public:
     
     ID3D12Resource* GetCurrentBackBuffer() const;
     unsigned int GetCurrentBackBufferIndex() const;
+    ID3D12Resource* GetRenderTarget(UINT index) const { return m_renderTargets[index].Get(); }
 
 private:
     bool CreateDevice();

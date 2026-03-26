@@ -1,109 +1,112 @@
-﻿#pragma once
+#pragma once
 
-#include "Common.h"
-#include "Types.h"
-#include "ModelImporter.h"
-#include "WindowManager.h"
-#include "Renderer/DX12GraphicsDevice.h"
-#include "Renderer/DX12DescriptorHeap.h"
-#include "Renderer/DX12ConstantBuffer.h"
-#include "Renderer/DX12RootSignature.h"
-#include "Renderer/Model.h"
+#include <string>
+#include <vector>
 #include <memory>
+#include <wrl/client.h>
+#include <d3d12.h>
+#include <dxgi1_6.h>
+#include <DirectXMath.h>
+#include <chrono>
 
-using namespace DirectX;
+#include "Types.h"
+#include "Renderer/DX12GraphicsDevice.h"
 
-class Application {
-private:
-	// private member
-	// Windows
-	ID3DBlob* errorBlob = nullptr;
-	XMMATRIX _vMatrix = XMMatrixIdentity();
-	XMMATRIX _pMatrix = XMMatrixIdentity();
-	ModelViewer::TransformMatrices* _mapTransformMatrix = nullptr;
-	ModelViewer::SceneMatrices* _mapSceneMatrix = nullptr;
-	std::unique_ptr<class TDX12ConstantBuffer> _transformCB;
-	std::unique_ptr<class TDX12ConstantBuffer> _sceneCB;
+// Forward declarations
+class TWindowManager;
+class TDX12DescriptorHeap;
+class TDX12RootSignature;
+class TDX12ConstantBuffer;
+class ModelImporter;
+class Model;
 
-	// DX12
-	std::unique_ptr<DX12GraphicsDevice> _graphicsDevice;
+namespace ModelViewer {
 
+	class Application {
+	private:
+		// Singleton: private constructor
+		Application();
+		Application(const Application&) = delete;
+		Application& operator=(const Application&) = delete;
 
-	// Pipeline State
-	Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipelineState = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12PipelineState> _shadowPipelineState = nullptr;
+	public:
+		static Application& GetInstance() {
+			static Application instance;
+			return instance;
+		}
 
-	std::unique_ptr<class TDX12RootSignature> m_rootSignature;
+		~Application();
 
-	// Pipeline settings of pass for Post Process
-	Microsoft::WRL::ComPtr<ID3D12RootSignature> _canvasRootSignature = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12PipelineState> _canvasPipelineState = nullptr;
-	// Pipeline settings of pass for Compute (Skinning for now)
-	Microsoft::WRL::ComPtr<ID3D12RootSignature> _computeRootSignature = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12PipelineState> _computePipelineState = nullptr;
+		bool Init();
+		void Run();
+		void Terminate();
 
-	static std::unique_ptr<TDX12DescriptorHeap> g_resourceDescriptorHeapWrapper; // Descriptor Heap Wrapper for CBV, SRV, UAV
-	Microsoft::WRL::ComPtr<ID3D12Resource> _depthBuffer = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtvHeap = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _dsvHeap = nullptr;
+		bool LoadModel(const std::string& path);
 
-	// Model resource management (migrated to Model class)
-	std::unique_ptr<Model> _model;
+		// Shared descriptor heap wrapper
+		static std::unique_ptr<TDX12DescriptorHeap> g_resourceDescriptorHeapWrapper;
 
-	// for Post Process Additional Path
-	Microsoft::WRL::ComPtr<ID3D12Resource> _postProcessResource = nullptr;
+	private:
+		void CheckError(const char* msg, HRESULT result = S_OK);
+		bool CreatePipelineState();
+		void CreateCanvasPipelineState();
+		void CreateShadowMapPipelineState(D3D12_GRAPHICS_PIPELINE_STATE_DESC gpipelineDesc);
+		void CreateCBV();
+		void CreateDepthStencilView();
+		void CreatePostProcessResourceAndView();
+		void OpenFileDialog();
+		void ReleaseModelResources();
+		
+		void SetupImGui();
+		void DrawImGui(bool &useGpuSkinning, ModelViewer::AnimState& animState);
+		void CleanupImGui();
 
-	// for shadow map
-	Microsoft::WRL::ComPtr<ID3D12Resource> _lightDepthBuffer = nullptr; // shadow map
+		void SetupComputePass();
 
-	// Vertex (migrated to Model class)
-	D3D12_VERTEX_BUFFER_VIEW _canvasVBV = {}; // for post process canvas
+		std::unique_ptr<TWindowManager> windowManager;
+		std::unique_ptr<DX12GraphicsDevice> _graphicsDevice;
 
-	std::unique_ptr<ModelImporter> _modelImporter;
-	std::unique_ptr<TWindowManager> windowManager;
+		Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtvHeap;
+		Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _dsvHeap;
 
-	void CreateDepthStencilView();
-	bool CreatePipelineState();
-	void CreateCanvasPipelineState();
-	void CreateShadowMapPipelineState(D3D12_GRAPHICS_PIPELINE_STATE_DESC gpipelineDesc);
-	void CreateCBV();
-	void CreatePostProcessResourceAndView();
+		Microsoft::WRL::ComPtr<ID3D12RootSignature> _canvasRootSignature;
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> _canvasPipelineState;
+		Microsoft::WRL::ComPtr<ID3D12Resource> _canvasVertexResource;
+		D3D12_VERTEX_BUFFER_VIEW _canvasVBV;
 
-	bool LoadModel(const std::string& path);
-	void ReleaseModelResources();
+		Microsoft::WRL::ComPtr<ID3D12Resource> _postProcessResource;
+		D3D12_GPU_DESCRIPTOR_HANDLE _postProcessSRVHandle;
 
-	void SetVerticesInfo();
-	void SetupComputePass();
-	void SetupModelResources(); // モデルごとのバッファ作成を分離
+		Microsoft::WRL::ComPtr<ID3D12Resource> _depthBuffer;
+		Microsoft::WRL::ComPtr<ID3D12Resource> _lightDepthBuffer;
+		D3D12_GPU_DESCRIPTOR_HANDLE _depthSRVHandle;
+		D3D12_GPU_DESCRIPTOR_HANDLE _lightDepthSRVHandle;
 
-	// ImGui
-	void SetupImGui();
-	void DrawImGui(bool &useGpuSkinning, ModelViewer::AnimState& animState);
-	void CleanupImGui();
+		std::unique_ptr<TDX12RootSignature> m_rootSignature;
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipelineState;
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> _shadowPipelineState;
 
-	// ファイル選択
-	void OpenFileDialog();
-	std::string _pendingModelPath = "";
-	bool _shouldReloadModel = false;
+		Microsoft::WRL::ComPtr<ID3D12RootSignature> _computeRootSignature;
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> _computePipelineState;
 
-	// Singleton: private constructor
-	// not allow to copy but allow to move
-	Application() {};
-	Application(const Application&) = delete;
-	void operator=(const Application&) = delete;
+		std::unique_ptr<TDX12ConstantBuffer> _transformCB;
+		std::unique_ptr<TDX12ConstantBuffer> _sceneCB;
+		D3D12_GPU_DESCRIPTOR_HANDLE _transformCBVHandle;
+		D3D12_GPU_DESCRIPTOR_HANDLE _sceneCBVHandle;
 
-	// Util
-	void CheckError(const char* msg, HRESULT result = S_OK); // UE4の参考にもっと良くする
+		TransformMatrices* _mapTransformMatrix = nullptr;
+		SceneMatrices* _mapSceneMatrix = nullptr;
 
-public:
-	static Application& GetInstance() {
-		static Application instance; // Guaranteed to be destroyed.
-									 // Instantiated on first use.
-		return instance;
+		DirectX::XMMATRIX _vMatrix;
+		DirectX::XMMATRIX _pMatrix;
+
+		std::unique_ptr<ModelImporter> _modelImporter;
+		std::unique_ptr<Model> _model;
+
+		Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
+
+		bool _shouldReloadModel = false;
+		std::string _pendingModelPath;
 	};
-	bool Init();
-	void Run();
-	void Terminate();
-	~Application() {};
-};
 
+}

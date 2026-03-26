@@ -1,4 +1,6 @@
-﻿#include "Application.h"
+#include "Application.h"
+
+using namespace ModelViewer;
 
 
 #ifdef _DEBUG
