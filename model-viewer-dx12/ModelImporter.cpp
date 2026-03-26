@@ -189,7 +189,7 @@ void ModelImporter::UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4
 	aiMatrix4x4 nodeTransform = pNode->mTransformation;
 	// このノードに対応するアニメーションチャンネルがあれば補間行列を取得
 	const aiNodeAnim* pNodeAnim = node_anim_map[nodeName];
-	if (pNodeAnim && !animState.showBindPose && pNode != scene->mRootNode) {
+	if (pNodeAnim && !animState.showBindPose) {
 		nodeTransform = InterpolateTransform(pNodeAnim, mAnimCurrentTicks);
 	}
 
