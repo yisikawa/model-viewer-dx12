@@ -539,4 +539,47 @@ void Application::Run() {
 	}
 }
 
-void Application::Terminate() { CleanupImGui(); }
+void Application::Terminate() {
+	static bool isTerminated = false;
+	if (isTerminated) return;
+	isTerminated = true;
+
+	CleanupImGui();
+
+	if (_graphicsDevice) {
+		_graphicsDevice->WaitDrawDone();
+	}
+
+	// Release resources in correct order (Resources -> Device)
+	_model.reset();
+	_modelImporter.reset();
+
+	_transformCB.reset();
+	_sceneCB.reset();
+
+	m_rootSignature.reset();
+	_canvasRootSignature.Reset();
+	_computeRootSignature.Reset();
+
+	_pipelineState.Reset();
+	_shadowPipelineState.Reset();
+	_canvasPipelineState.Reset();
+	_computePipelineState.Reset();
+
+	_depthBuffer.Reset();
+	_lightDepthBuffer.Reset();
+	_postProcessResource.Reset();
+	_canvasVertexResource.Reset();
+	_rtvHeap.Reset();
+	_dsvHeap.Reset();
+
+	errorBlob.Reset();
+
+	// Very important: Reset static descriptor heap wrapper
+	g_resourceDescriptorHeapWrapper.reset();
+
+	windowManager.reset();
+
+	// Release device last
+	_graphicsDevice.reset();
+}

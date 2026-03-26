@@ -2,7 +2,9 @@
 #include <iostream>
 
 DX12GraphicsDevice::DX12GraphicsDevice() {}
-DX12GraphicsDevice::~DX12GraphicsDevice() {}
+DX12GraphicsDevice::~DX12GraphicsDevice() {
+    WaitDrawDone();
+}
 
 bool DX12GraphicsDevice::Initialize(HWND hwnd, unsigned int width, unsigned int height) {
     if (!CreateDevice()) return false;
