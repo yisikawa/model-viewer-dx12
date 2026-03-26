@@ -490,13 +490,27 @@ void Application::Run() {
 			std::copy(_modelImporter->boneMatrices, _modelImporter->boneMatrices + 256, _mapTransformMatrix->bones);
 		}
 
-		// カメラ回転処理
+		// カメラ回転・平行移動処理
 		if (ImGui::IsMouseDown(0) && !ImGui::GetIO().WantCaptureMouse) {
 			auto delta = ImGui::GetIO().MouseDelta;
-			m_cameraYaw -= delta.x * 0.005f;
-			m_cameraPitch += delta.y * 0.005f;
-			// ジンバルロック防止
-			m_cameraPitch = std::clamp(m_cameraPitch, -DirectX::XM_PIDIV2 + 0.01f, DirectX::XM_PIDIV2 - 0.01f);
+			if (ImGui::GetIO().KeyShift) {
+				// 平行移動（パン）
+				float sensitivity = 0.05f;
+				// ビュー行列から右・上ベクトルを取得（LH)
+				DirectX::XMVECTOR right = DirectX::XMVectorSet(_vMatrix.r[0].m128_f32[0], _vMatrix.r[1].m128_f32[0], _vMatrix.r[2].m128_f32[0], 0);
+				DirectX::XMVECTOR up = DirectX::XMVectorSet(_vMatrix.r[0].m128_f32[1], _vMatrix.r[1].m128_f32[1], _vMatrix.r[2].m128_f32[1], 0);
+
+				DirectX::XMVECTOR translation = (right * -delta.x + up * delta.y) * sensitivity;
+				DirectX::XMVECTOR newTarget = DirectX::XMLoadFloat3(&m_cameraTarget) + translation;
+				DirectX::XMStoreFloat3(&m_cameraTarget, newTarget);
+			}
+			else {
+				// 回転処理
+				m_cameraYaw -= delta.x * 0.005f;
+				m_cameraPitch += delta.y * 0.005f;
+				// ジンバルロック防止
+				m_cameraPitch = std::clamp(m_cameraPitch, -DirectX::XM_PIDIV2 + 0.01f, DirectX::XM_PIDIV2 - 0.01f);
+			}
 		}
 
 		DirectX::XMVECTOR targetPos = DirectX::XMLoadFloat3(&m_cameraTarget);
