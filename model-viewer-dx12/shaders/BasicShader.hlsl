@@ -4,7 +4,7 @@ struct VS_OUT {
 	float2 uv : TEXCOORD;
 	float3 view : VIEW;
 	uint instanceID : SV_InstanceID;
-	float4 tpos : TPOS; // 取得したテクスチャと、ライトから見た深度を比較するため、ライトビューで座標変換した情報
+	float4 tpos : TPOS;
 };
 
 Texture2D<float4> tex : register(t0);
@@ -23,7 +23,7 @@ cbuffer cbuff1 : register(b1) {
 	matrix proj;
 	matrix lightViewProj;
 	matrix shadow;
-	float3 eye; // eye position: view matrixから取れそう。
+	float3 eye;
 };
 
 cbuffer Material : register(b1) {
@@ -34,11 +34,6 @@ cbuffer Material : register(b1) {
 };
 
 float4 ShadowVS(in float4 pos: POSITION, in float4 normal : NORMAL, in float2 uv : TEXCOORD, in min16uint2 boneid : BONEID, in float2 weight : WEIGHT) : SV_POSITION{
-    // Migrate to SkinningCS.hlsl
-	//if (boneid[0] != 255) {
-	//	matrix bonemat = (bones[boneid[0]] * weight[0] + bones[boneid[1]] * weight[1]) / (weight[0] + weight[1]);
-	//	pos = mul(bonemat, pos);
-	//}
     pos = mul(world, pos);
     return mul(lightViewProj, pos);
 }
@@ -46,14 +41,8 @@ float4 ShadowVS(in float4 pos: POSITION, in float4 normal : NORMAL, in float2 uv
 VS_OUT MainVS(in float4 pos : POSITION, in float3 normal : NORMAL, in float2 uv : TEXCOORD, in min16uint2 boneid : BONEID, in float2 weight : WEIGHT, in uint instanceID : SV_InstanceID)
 {
     VS_OUT output;
-    // Migrate to SkinningCS.hlsl
-    //if (boneid[0] != 255)
-    //{
-    //    matrix bonemat = (bones[boneid[0]] * weight[0] + bones[boneid[1]] * weight[1]) / (weight[0] + weight[1]);
-    //    pos = mul(bonemat, pos);
-    //}
     pos = mul(world, pos);
-    if (instanceID == 1) // multiply shadow matrix if shadow pass (instanceID = 0 is model pass, instanceID = 1 is shadow pass)
+    if (instanceID == 1)
     {
         pos = mul(shadow, pos);
     }
@@ -62,7 +51,7 @@ VS_OUT MainVS(in float4 pos : POSITION, in float3 normal : NORMAL, in float2 uv 
     output.uv = uv;
     output.view = normalize(pos.xyz - eye);
     output.instanceID = instanceID;
-    output.tpos = mul(lightViewProj, pos); // このあと、PSで比較を行う
+    output.tpos = mul(lightViewProj, pos);
     return output;
 }
 
@@ -79,20 +68,18 @@ float4 MainPS(in VS_OUT input) : SV_TARGET
     float NdotL = dot(N, L);
     float4 texColor = materialTex.Sample(materialSampler, input.uv);
 
-
-    // tposxyz / tpos.w
-    float3 posFromLightVP = input.tpos.xyz / input.tpos.w; // 投影行列は、wで割ることにより[-1,1],[-1,1],[0,1]に正規化される仕様, SV_POSITIONの場合はラスタライザがこれをやる
+    float3 posFromLightVP = input.tpos.xyz / input.tpos.w;
     float2 shadowUV = (posFromLightVP.xy + float2(1, -1)) * float2(0.5, -0.5);
-    //float depthFromLight = depthTex.Sample(smp, shadowUV);
-    //float shadowWeight = 1.0f;
-    //if (depthFromLight < posFromLightVP.z - 0.001f) { // bias 値を引くことで、計算誤差の範囲外、シャドウ阿久根を防ぐ
-    //	shadowWeight = 0.5f;
-    //}
     float depthFromLight = depthTex.SampleCmp(shadowSmp, shadowUV, posFromLightVP.z - 0.005f);
     float shadowWeight = lerp(0.5f, 1.0f, depthFromLight);
     
-    // TODO: seems shadowWeight is not calculated correctly
+    float4 finalColor = float4(NdotL, NdotL, NdotL, 1.0) * texColor;
+    finalColor.rgb += Specular;
+    finalColor.rgb *= shadowWeight;
+    finalColor.a = texColor.a;
+    
+    // Alpha test for whiskers and fine details
+    if(finalColor.a < 0.1) discard;
 
-// 	return float4(NdotL, NdotL, NdotL, 1) * texColor + specular * Specular + ambient * texColor; 
-    return (float4(NdotL, NdotL, NdotL, 1) * texColor + Specular) * shadowWeight;
+    return finalColor;
 }
