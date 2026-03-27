@@ -69,7 +69,7 @@ float4 MainPS(in VS_OUT input) : SV_TARGET
     float3 L = normalize(lightDirection);
     float3 N = normalize(input.normal.xyz);
     if (useFlatShading != 0) {
-        N = normalize(cross(ddy(input.worldPos), ddx(input.worldPos)));
+        N = normalize(cross(ddx(input.worldPos), ddy(input.worldPos)));
     }
     float3 R = reflect(-L, N);
     float Specular = pow(saturate(dot(R, -input.view)), 20);
