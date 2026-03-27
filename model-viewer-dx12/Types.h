@@ -28,7 +28,7 @@ namespace ModelViewer {
 		DirectX::XMFLOAT3 eye;
 		float pad_scene0;
 		DirectX::XMFLOAT3 lightDirection;
-		float pad_scene1;
+		uint32_t useFlatShading;
 	};
 
 	struct CanvasVertex {
@@ -83,6 +83,8 @@ namespace ModelViewer {
 		bool	isPlaying = true;
 		bool	isLooping = true;
 		bool	showBindPose = false;
+		bool	showWireframe = false;  // ワイヤーフレーム表示フラグ
+		bool	useFlatShading = false; // フラットシェーディング表示フラグ
 		std::vector<std::string> animationNames;
 	};
 };

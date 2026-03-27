@@ -5,6 +5,7 @@ struct VS_OUT {
 	float3 view : VIEW;
 	uint instanceID : SV_InstanceID;
 	float4 tpos : TPOS;
+	float3 worldPos : WORLDPOS;
 };
 
 Texture2D<float4> tex : register(t0);
@@ -26,7 +27,7 @@ cbuffer cbuff1 : register(b1) {
 	float3 eye;
 	float pad_scene0;
 	float3 lightDirection;
-	float pad_scene1;
+	uint useFlatShading;
 };
 
 cbuffer Material : register(b1) {
@@ -55,6 +56,7 @@ VS_OUT MainVS(in float4 pos : POSITION, in float3 normal : NORMAL, in float2 uv 
     output.view = normalize(pos.xyz - eye);
     output.instanceID = instanceID;
     output.tpos = mul(lightViewProj, pos);
+    output.worldPos = pos.xyz;
     return output;
 }
 
@@ -66,6 +68,9 @@ float4 MainPS(in VS_OUT input) : SV_TARGET
     }
     float3 L = normalize(lightDirection);
     float3 N = normalize(input.normal.xyz);
+    if (useFlatShading != 0) {
+        N = normalize(cross(ddy(input.worldPos), ddx(input.worldPos)));
+    }
     float3 R = reflect(-L, N);
     float Specular = pow(saturate(dot(R, -input.view)), 20);
     float NdotL = dot(N, L);

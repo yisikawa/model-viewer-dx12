@@ -205,6 +205,11 @@ bool Application::CreatePipelineState() {
 	gpipeline.SampleDesc.Count = 1;
 
 	CheckError("CreateGraphicsPipelineState", _graphicsDevice->GetDevice()->CreateGraphicsPipelineState(&gpipeline, IID_PPV_ARGS(_pipelineState.ReleaseAndGetAddressOf())));
+
+	// Wireframe PSO
+	gpipeline.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	CheckError("CreateGraphicsPipelineState (Wireframe)", _graphicsDevice->GetDevice()->CreateGraphicsPipelineState(&gpipeline, IID_PPV_ARGS(_wireframePipelineState.ReleaseAndGetAddressOf())));
+
 	CreateShadowMapPipelineState(gpipeline);
 	return true;
 }
@@ -301,7 +306,7 @@ void Application::CreateCBV() {
 	_mapSceneMatrix->pad_scene0 = 0.0f;
 	DirectX::XMVECTOR lightDirVec = DirectX::XMVector3Normalize(DirectX::XMVectorNegate(lightVec));
 	DirectX::XMStoreFloat3(&_mapSceneMatrix->lightDirection, lightDirVec);
-	_mapSceneMatrix->pad_scene1 = 0.0f;
+	_mapSceneMatrix->useFlatShading = 0;
 	_mapSceneMatrix->shadow = DirectX::XMMatrixShadow(planeVec, -lightVec);
 
 	_transformCBVHandle = g_resourceDescriptorHeapWrapper->AddCBV(_graphicsDevice->GetDevice(), _transformCB->m_constantBuffer);
@@ -339,6 +344,8 @@ void Application::DrawImGui() {
 	ImGui::Checkbox("Use GPU Skinning", &m_useGpuSkinning);
 	ImGui::Checkbox("Is Playing", &m_animState.isPlaying);
 	ImGui::Checkbox("Show Bind Pose", &m_animState.showBindPose);
+	ImGui::Checkbox("Show Wireframe", &m_animState.showWireframe);
+	ImGui::Checkbox("Use Flat Shading", &m_animState.useFlatShading);
 	ImGui::SliderFloat("Playing Time", &m_animState.playingTime, 0.f, m_animState.currentAnimDuration);
 	if (m_animState.sceneAnimCount > 0) {
 		if (ImGui::BeginCombo("Selected Animation", m_animState.animationNames[m_animState.currentAnimIdx].c_str())) {
@@ -540,7 +547,9 @@ void Application::Run() {
 		_vMatrix = DirectX::XMMatrixLookAtLH(eyePos, targetPos, DirectX::XMVectorSet(0, 1, 0, 0));
 
 		if (_mapTransformMatrix) _mapTransformMatrix->world = DirectX::XMMatrixScaling(m_modelScale, m_modelScale, m_modelScale);
-		_mapSceneMatrix->view = _vMatrix; _mapSceneMatrix->proj = _pMatrix;
+		_mapSceneMatrix->view = _vMatrix; 
+		_mapSceneMatrix->proj = _pMatrix;
+		_mapSceneMatrix->useFlatShading = m_animState.useFlatShading ? 1 : 0;
 
 		auto cmd = _graphicsDevice->GetCommandList();
 		cmd->RSSetViewports(1, &vp); cmd->RSSetScissorRects(1, &sr);
@@ -568,7 +577,7 @@ void Application::Run() {
 		cmd->ClearRenderTargetView(postRTV, clr, 0, nullptr);
 		cmd->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 		cmd->SetGraphicsRootSignature(m_rootSignature->GetRootSignaturePointer());
-		cmd->SetPipelineState(_pipelineState.Get());
+		cmd->SetPipelineState(m_animState.showWireframe ? _wireframePipelineState.Get() : _pipelineState.Get());
 		cmd->SetGraphicsRootDescriptorTable(0, _transformCBVHandle);
 		cmd->SetGraphicsRootDescriptorTable(2, _lightDepthSRVHandle);
 		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -628,6 +637,7 @@ void Application::Terminate() {
 	_computeRootSignature.Reset();
 
 	_pipelineState.Reset();
+	_wireframePipelineState.Reset();
 	_shadowPipelineState.Reset();
 	_canvasPipelineState.Reset();
 	_computePipelineState.Reset();

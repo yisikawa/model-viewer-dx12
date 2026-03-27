@@ -84,6 +84,7 @@ namespace ModelViewer {
 
 		std::unique_ptr<TDX12RootSignature> m_rootSignature;
 		Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipelineState;
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> _wireframePipelineState;
 		Microsoft::WRL::ComPtr<ID3D12PipelineState> _shadowPipelineState;
 
 		Microsoft::WRL::ComPtr<ID3D12RootSignature> _computeRootSignature;
