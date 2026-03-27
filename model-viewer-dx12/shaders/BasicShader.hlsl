@@ -65,8 +65,8 @@ float4 MainPS(in VS_OUT input) : SV_TARGET
         return float4(0, 0, 0, 1.0);
     }
     float3 L = normalize(lightDirection);
-    float3 N = normalize(input.normal).xyz;
-    float3 R = normalize(reflect(L, input.normal.xyz));
+    float3 N = normalize(input.normal.xyz);
+    float3 R = reflect(-L, N);
     float Specular = pow(saturate(dot(R, -input.view)), 20);
     float NdotL = dot(N, L);
     float4 texColor = materialTex.Sample(materialSampler, input.uv);

@@ -284,7 +284,7 @@ void Application::CreateCBV() {
 
 	DirectX::XMVECTOR lightVec = { 1.0f, -1.0f, 1.0f };
 	DirectX::XMVECTOR planeVec = { 0.0f, 1.0f, 0.0f, 0.0f };
-	auto lightPos = targetPos + DirectX::XMVector3Normalize(lightVec) * DirectX::XMVector3Length(DirectX::XMVectorSubtract(targetPos, eyePos)).m128_f32[0];
+	auto lightPos = targetPos - DirectX::XMVector3Normalize(lightVec) * DirectX::XMVector3Length(DirectX::XMVectorSubtract(targetPos, eyePos)).m128_f32[0];
 
 	_transformCB = std::make_unique<TDX12ConstantBuffer>(sizeof(TransformMatrices), _graphicsDevice->GetDevice());
 	_sceneCB = std::make_unique<TDX12ConstantBuffer>(sizeof(SceneMatrices), _graphicsDevice->GetDevice());
