@@ -73,7 +73,8 @@ float4 MainPS(in VS_OUT input) : SV_TARGET
 
     float3 posFromLightVP = input.tpos.xyz / input.tpos.w;
     float2 shadowUV = (posFromLightVP.xy + float2(1, -1)) * float2(0.5, -0.5);
-    float depthFromLight = depthTex.SampleCmp(shadowSmp, shadowUV, posFromLightVP.z - 0.005f);
+    float bias = max(0.001 * (1.0 - dot(N, L)), 0.0001);
+    float depthFromLight = depthTex.SampleCmp(shadowSmp, shadowUV, posFromLightVP.z - bias);
     float shadowWeight = lerp(0.5f, 1.0f, depthFromLight);
     
     float4 finalColor = float4(NdotL, NdotL, NdotL, 1.0) * texColor;

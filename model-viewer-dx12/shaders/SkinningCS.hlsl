@@ -1,5 +1,4 @@
 
-
 struct Vertex
 {
     float3 pos;         float pad0;
@@ -24,7 +23,7 @@ void main( uint3 DTid : SV_DispatchThreadID )
     Vertex v = InputVertices[DTid.x];
 
     float4 pos = float4(v.pos, 1);
-    
+
     matrix boneMatrix = (matrix)0;
     float boneAllWeight = 0;
     for (int j = 0; j < 2; j++)
@@ -37,8 +36,9 @@ void main( uint3 DTid : SV_DispatchThreadID )
     }
     boneMatrix /= boneAllWeight;
 
+    // 頂点と法線のスキンニング
     v.pos = mul(boneMatrix, pos).xyz;
-    
+    v.normal = normalize(mul((float3x3)boneMatrix, v.normal));
 
     OutputVertices[DTid.x] = v;
 }

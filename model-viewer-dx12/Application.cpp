@@ -570,6 +570,7 @@ void Application::Run() {
 		cmd->SetGraphicsRootSignature(m_rootSignature->GetRootSignaturePointer());
 		cmd->SetPipelineState(_pipelineState.Get());
 		cmd->SetGraphicsRootDescriptorTable(0, _transformCBVHandle);
+		cmd->SetGraphicsRootDescriptorTable(2, _lightDepthSRVHandle);
 		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		if (_model) _model->Draw(cmd);
 
