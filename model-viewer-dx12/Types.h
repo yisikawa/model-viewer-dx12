@@ -26,6 +26,9 @@ namespace ModelViewer {
 		DirectX::XMMATRIX lightViewProj;
 		DirectX::XMMATRIX shadow;
 		DirectX::XMFLOAT3 eye;
+		float pad_scene0;
+		DirectX::XMFLOAT3 lightDirection;
+		float pad_scene1;
 	};
 
 	struct CanvasVertex {

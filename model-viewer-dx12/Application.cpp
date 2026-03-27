@@ -298,6 +298,10 @@ void Application::CreateCBV() {
 	_mapSceneMatrix->proj = _pMatrix;
 	_mapSceneMatrix->lightViewProj = DirectX::XMMatrixLookAtLH(lightPos, targetPos, upVec) * DirectX::XMMatrixOrthographicLH(40, 40, 1.0f, 100.0f); 
 	_mapSceneMatrix->eye = DirectX::XMFLOAT3(eyePos.m128_f32[0], eyePos.m128_f32[1], eyePos.m128_f32[2]);
+	_mapSceneMatrix->pad_scene0 = 0.0f;
+	DirectX::XMVECTOR lightDirVec = DirectX::XMVector3Normalize(DirectX::XMVectorNegate(lightVec));
+	DirectX::XMStoreFloat3(&_mapSceneMatrix->lightDirection, lightDirVec);
+	_mapSceneMatrix->pad_scene1 = 0.0f;
 	_mapSceneMatrix->shadow = DirectX::XMMatrixShadow(planeVec, -lightVec);
 
 	_transformCBVHandle = g_resourceDescriptorHeapWrapper->AddCBV(_graphicsDevice->GetDevice(), _transformCB->m_constantBuffer);

@@ -24,6 +24,9 @@ cbuffer cbuff1 : register(b1) {
 	matrix lightViewProj;
 	matrix shadow;
 	float3 eye;
+	float pad_scene0;
+	float3 lightDirection;
+	float pad_scene1;
 };
 
 cbuffer Material : register(b1) {
@@ -61,7 +64,7 @@ float4 MainPS(in VS_OUT input) : SV_TARGET
     {
         return float4(0, 0, 0, 1.0);
     }
-    float3 L = normalize(float3(-1, 1, -1));
+    float3 L = normalize(lightDirection);
     float3 N = normalize(input.normal).xyz;
     float3 R = normalize(reflect(L, input.normal.xyz));
     float Specular = pow(saturate(dot(R, -input.view)), 20);
