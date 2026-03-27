@@ -48,16 +48,28 @@ void ModelImporter::LoadMesh(aiMesh* mesh) {
 			};
 
 		// boneid, weight
-		for (unsigned int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex) {
-			aiBone* bone = mesh->mBones[boneIndex];
+		for (unsigned int b = 0; b < mesh->mNumBones; ++b) {
+			aiBone* bone = mesh->mBones[b];
 			std::string boneName = bone->mName.C_Str();
-			node_bone_map[bone->mName.C_Str()] = boneIndex;
-			boneOffsets[boneIndex] = bone->mOffsetMatrix;
+			
+			unsigned int boneIndex;
+			// [改善] ボーン名ですでに登録されているか確認
+			if (node_bone_map.count(boneName)) {
+				// 登録済みならそのインデックスを使用
+				boneIndex = node_bone_map[boneName];
+			} else {
+				// 未登録なら新しいインデックス（現在のマップサイズ）を割り当て
+				boneIndex = (unsigned int)node_bone_map.size();
+				node_bone_map[boneName] = boneIndex;
+				boneOffsets[boneIndex] = bone->mOffsetMatrix;
+			}
 
-			std::cout << "Mesh name: " << mesh->mName.C_Str() << ", " << boneIndex << " th Bone name: " << boneName << std::endl;
+			std::cout << "Mesh: " << mesh_name << " | Bone: " << boneName << " -> Global Index: " << boneIndex << std::endl;
+
 			for (unsigned int wid = 0; wid < bone->mNumWeights; ++wid) {
 				aiVertexWeight weight = bone->mWeights[wid];
 				int vertexId = weight.mVertexId;
+				// 頂点にグローバルなボーンIDを書き込む
 				AddBoneInfo(mesh_vertices[mesh_name][vertexId], boneIndex, weight.mWeight);
 			}
 		}

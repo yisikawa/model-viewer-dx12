@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "../Common.h"
 #include "../Types.h"
 #include "DX12ShaderResource.h"
@@ -49,6 +49,8 @@ private:
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_resources;
     std::vector<std::unique_ptr<TDX12ShaderResource>> m_textures;
     std::vector<ModelViewer::MeshDrawInfo> m_meshDrawInfos;
+    std::vector<std::string> m_meshNames; // 各描画情報のメッシュ名
+    std::map<std::string, TDX12ShaderResource*> m_textureMap; // 名称(パス) -> リソースのマップ
     std::map<std::string, D3D12_VERTEX_BUFFER_VIEW> m_vbViews;
     std::map<std::string, D3D12_INDEX_BUFFER_VIEW> m_ibViews;
 

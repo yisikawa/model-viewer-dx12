@@ -1,4 +1,4 @@
-﻿#include "Model.h"
+#include "Model.h"
 #include "../ModelImporter.h"
 #include "DX12DescriptorHeap.h"
 #include <iostream>
@@ -88,6 +88,7 @@ bool Model::SetupMeshResources(ID3D12Device* device, ModelImporter* importer, TD
         meshInfo.srvGpuHandle = descriptorHeap->AddSRV(device, vertexBufferInput.Get(), (UINT)vertices.size(), sizeof(ModelViewer::Vertex));
 
         m_meshDrawInfos.push_back(meshInfo);
+        m_meshNames.push_back(name); // メッシュ名を記録
         meshIdx++;
     }
 
@@ -97,21 +98,27 @@ bool Model::SetupMeshResources(ID3D12Device* device, ModelImporter* importer, TD
 bool Model::SetupTextures(ID3D12Device* device, ModelImporter* importer, const std::string& modelDir, TDX12DescriptorHeap* descriptorHeap) {
     if (!importer || !descriptorHeap) return false;
 
+    m_textureMap.clear();
     for (const auto& texName : importer->texture_names) {
         auto tex = std::make_unique<TDX12ShaderResource>();
         tex->Initialize(device, modelDir, texName);
         if (tex->IsValid()) {
             tex->srvGpuHandle = descriptorHeap->AddSRV(device, tex->m_shaderResource, tex->GetResourceFormat());
+            m_textureMap[texName] = tex.get(); // 名称で引けるようにマップへ登録
             m_textures.push_back(std::move(tex));
         } else {
             std::cout << "[Warning] Failed to load texture: " << texName << std::endl;
         }
     }
 
+    // 各メッシュに対し、インポーターが保持する名称ベースの情報を利用してテクスチャを割り当てる
     for (size_t i = 0; i < m_meshDrawInfos.size(); ++i) {
-        int texIdx = importer->mesh_texture_indices[i];
-        if (texIdx >= 0 && texIdx < (int)m_textures.size()) {
-            m_meshDrawInfos[i].materialTexGpuHandle = m_textures[texIdx]->srvGpuHandle;
+        const std::string& meshName = m_meshNames[i];
+        if (importer->mesh_texture_name.count(meshName)) {
+            const std::string& texName = importer->mesh_texture_name.at(meshName);
+            if (m_textureMap.count(texName)) {
+                m_meshDrawInfos[i].materialTexGpuHandle = m_textureMap[texName]->srvGpuHandle;
+            }
         }
     }
 
