@@ -70,22 +70,28 @@ void ModelImporter::LoadMesh(aiMesh* mesh) {
 	mesh_material_name[mesh_name] = materialName;
 
 	int texIdx = -1;
-	// Check all the texture type
-	for (int i = aiTextureType::aiTextureType_NONE; i < aiTextureType_GLTF_METALLIC_ROUGHNESS; ++i) {
-		if (material->GetTextureCount((aiTextureType)i) > 0) {
-			material->GetTexture((aiTextureType)i, 0, &texPath);
-			std::string tName = texPath.C_Str();
-			mesh_texture_name[mesh_name] = tName;
-			
-			// 一意なテクスチャリストに追加
-			auto it = std::find(texture_names.begin(), texture_names.end(), tName);
-			if (it == texture_names.end()) {
-				texIdx = (int)texture_names.size();
-				texture_names.push_back(tName);
-			} else {
-				texIdx = (int)std::distance(texture_names.begin(), it);
+	// Check all the texture types and collect all paths
+	for (int i = 1; i < aiTextureType_UNKNOWN; ++i) {
+		aiTextureType type = (aiTextureType)i;
+		unsigned int count = material->GetTextureCount(type);
+		for (unsigned int j = 0; j < count; ++j) {
+			if (material->GetTexture(type, j, &texPath) == aiReturn_SUCCESS) {
+				std::string tName = texPath.C_Str();
+				mesh_textures_map[mesh_name].push_back({ type, tName });
+
+				// Add to overall unique texture list
+				auto it = std::find(texture_names.begin(), texture_names.end(), tName);
+				if (it == texture_names.end()) {
+					texture_names.push_back(tName);
+				}
+
+				// Still set primary texture for legacy support and initial setup
+				if (mesh_texture_name.count(mesh_name) == 0) {
+					mesh_texture_name[mesh_name] = tName;
+					auto it_primary = std::find(texture_names.begin(), texture_names.end(), tName);
+					texIdx = (int)std::distance(texture_names.begin(), it_primary);
+				}
 			}
-			break;
 		}
 	}
 	mesh_texture_indices.push_back(texIdx);

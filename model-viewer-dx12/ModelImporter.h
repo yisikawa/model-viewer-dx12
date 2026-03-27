@@ -43,7 +43,12 @@ public:
 	// �߂����ቓ���Ȃ񂾂��ǁAmesh_name -> material_name -> texture����
 	// ������mesh�œ����e�N�X�`����g�����Ƃ�����ꍇ�Aflyweight pattern��g���Ɨǂ��B�����map��find���Ă�������Ԃ��A�Ȃ���������݂����ɂ���΂���.
 	std::map<std::string, std::string> mesh_material_name;
-	std::map<std::string, std::string> mesh_texture_name;
+	struct MeshTextureData {
+		aiTextureType type;
+		std::string path;
+	};
+	std::map<std::string, std::vector<MeshTextureData>> mesh_textures_map;
+	std::map<std::string, std::string> mesh_texture_name; // Legacy support
 	std::map<std::string, unsigned int> node_bone_map;
 	std::map<std::string, aiNodeAnim*> node_anim_map;
 
