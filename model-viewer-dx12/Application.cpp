@@ -549,6 +549,7 @@ void Application::Run() {
 		if (_mapTransformMatrix) _mapTransformMatrix->world = DirectX::XMMatrixScaling(m_modelScale, m_modelScale, m_modelScale);
 		_mapSceneMatrix->view = _vMatrix; 
 		_mapSceneMatrix->proj = _pMatrix;
+		DirectX::XMStoreFloat3(&_mapSceneMatrix->eye, eyePos);
 		_mapSceneMatrix->useFlatShading = m_animState.useFlatShading ? 1 : 0;
 
 		auto cmd = _graphicsDevice->GetCommandList();
