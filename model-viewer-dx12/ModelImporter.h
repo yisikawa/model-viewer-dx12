@@ -14,7 +14,7 @@ public:
 	}
 	bool CreateModelImporter(const std::string& inFbxFileName);
 private:
-	void LoadMesh(aiMesh* mesh);
+	void LoadMesh(aiMesh* mesh, unsigned int meshIndex);
 	std::string GetExtension(const std::string& path) {
 		auto idx = path.rfind('.');
 		return path.substr(idx + 1, path.length() - idx - 1);
@@ -35,13 +35,12 @@ private:
 	float mAnimCurrentTicks = 0., mAnimDurationTicks = 0., mAnimTicksPerSecond = 0.;
 
 public:
-	std::map<std::string, std::vector<ModelViewer::Vertex>> mesh_vertices; // �g���}�e���A�����Ƃɕ��ނ��ꂽ���b�V���B
+	std::map<std::string, std::vector<ModelViewer::Vertex>> mesh_vertices; 
 	std::map<std::string, std::vector<unsigned short>> mesh_indices;
 	std::vector<std::string> texture_names;
 	std::vector<int> mesh_texture_indices;
 	std::vector<std::string> mesh_names;
-	// �߂����ቓ���Ȃ񂾂��ǁAmesh_name -> material_name -> texture����
-	// ������mesh�œ����e�N�X�`����g�����Ƃ�����ꍇ�Aflyweight pattern��g���Ɨǂ��B�����map��find���Ă�������Ԃ��A�Ȃ���������݂����ɂ���΂���.
+	
 	std::map<std::string, std::string> mesh_material_name;
 	struct MeshTextureData {
 		aiTextureType type;
@@ -53,8 +52,8 @@ public:
 	std::map<std::string, aiNodeAnim*> node_anim_map;
 
 	struct BoneInfo {
-		aiNode* meshNode; // aiNode: �V�[���̊K�w�\����Ǘ������{�P��
-		aiBone* cluster; // aiBone: ���_�C���f�b�N�X�ƃE�F�C�g�̃y�A��Ǘ�
+		aiNode* meshNode; 
+		aiBone* cluster; 
 	};
 	// bone information
 	BoneInfo bones[256] = {};

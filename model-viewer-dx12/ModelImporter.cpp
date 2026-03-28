@@ -1,7 +1,9 @@
 #include "ModelImporter.h"
 
-void ModelImporter::LoadMesh(aiMesh* mesh) {
-	std::string mesh_name = mesh->mName.C_Str();
+void ModelImporter::LoadMesh(aiMesh* mesh, unsigned int meshIndex) {
+	std::string mesh_base_name = mesh->mName.C_Str();
+	if (mesh_base_name.empty()) mesh_base_name = "Mesh";
+	const std::string mesh_name = mesh_base_name + "_" + std::to_string(meshIndex);
 	std::cout << "Load " << mesh_name << " Data" << std::endl;
 	// 1. 頂点情報の読み込み: pos, normal, uv
 	std::vector<ModelViewer::Vertex> vertices;
@@ -121,9 +123,13 @@ bool ModelImporter::CreateModelImporter(const std::string& inFbxFileName) {
 	int meshCount = scene->mNumMeshes;
 	for (int i = 0; i < meshCount; ++i) {
 		aiMesh* mesh = scene->mMeshes[i];
-		std::cout << i << " th mesh name is " << mesh->mName.C_Str() << std::endl;
-		mesh_names.push_back(mesh->mName.C_Str());
-		LoadMesh(mesh);
+		std::string mesh_name = mesh->mName.C_Str();
+		if (mesh_name.empty()) mesh_name = "Mesh";
+		std::string unique_name = mesh_name + "_" + std::to_string(i);
+
+		std::cout << i << " th mesh unique name is " << unique_name << std::endl;
+		mesh_names.push_back(unique_name);
+		LoadMesh(mesh, (unsigned int)i);
 	}
 
 	return true;
