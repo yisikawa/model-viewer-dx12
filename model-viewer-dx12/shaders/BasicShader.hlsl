@@ -73,7 +73,8 @@ float4 MainPS(in VS_OUT input) : SV_TARGET
     }
     float3 R = reflect(-L, N);
     float Specular = pow(saturate(dot(R, -input.view)), 20);
-    float NdotL = dot(N, L);
+    float NdotL = saturate(dot(N, L));
+    float lighting = NdotL * 0.65 + 0.35; // 環境光 0.35 (35%) に変更
     float4 texColor = materialTex.Sample(materialSampler, input.uv);
 
     float3 posFromLightVP = input.tpos.xyz / input.tpos.w;
@@ -82,7 +83,8 @@ float4 MainPS(in VS_OUT input) : SV_TARGET
     float depthFromLight = depthTex.SampleCmp(shadowSmp, shadowUV, posFromLightVP.z - bias);
     float shadowWeight = lerp(0.5f, 1.0f, depthFromLight);
     
-    float4 finalColor = float4(NdotL, NdotL, NdotL, 1.0) * texColor;
+    // ライティングとテクスチャ、自己影の合成
+    float4 finalColor = float4(lighting, lighting, lighting, 1.0) * texColor;
     finalColor.rgb += Specular;
     finalColor.rgb *= shadowWeight;
     finalColor.a = texColor.a;
