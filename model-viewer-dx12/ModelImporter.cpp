@@ -1,4 +1,8 @@
 #include "ModelImporter.h"
+#include <string>
+#include <map>
+#include <iostream>
+#include <cmath>
 
 void ModelImporter::LoadMesh(aiMesh* mesh, unsigned int meshIndex) {
 	std::string mesh_base_name = mesh->mName.C_Str();
@@ -58,7 +62,8 @@ void ModelImporter::LoadMesh(aiMesh* mesh, unsigned int meshIndex) {
 			// 未登録なら新しいインデックス（現在のマップサイズ）を割り当て
 			boneIndex = (unsigned int)node_bone_map.size();
 			node_bone_map[boneName] = boneIndex;
-			boneOffsets[boneIndex] = bone->mOffsetMatrix;
+			// ロード時に一度だけ変換
+			boneOffsets[boneIndex] = ConvertFbxMatrix(bone->mOffsetMatrix);
 		}
 
 		std::cout << "Mesh: " << mesh_name << " | Bone: " << boneName << " -> Global Index: " << boneIndex << std::endl;
@@ -119,6 +124,9 @@ bool ModelImporter::CreateModelImporter(const std::string& inFbxFileName) {
 		SetCurrentAnimation(0);
 	}
 
+	// ルートノードの逆行列計算は、初期位置のずれを避けるために現在は使用しません
+	globalInverseTransform = DirectX::XMMatrixIdentity();
+
 
 	int meshCount = scene->mNumMeshes;
 	for (int i = 0; i < meshCount; ++i) {
@@ -173,47 +181,39 @@ void ModelImporter::SetCurrentAnimation(UINT currentAnimIdx) {
 	mAnimCurrentTicks = 0.;
 }
 
-void ModelImporter::UpdateBoneMatrices(float deltaTime, ModelViewer::AnimState &animState) {
+void ModelImporter::UpdateBoneMatrices(float deltaTime, ModelViewer::AnimState& animState) {
+	if (!scene) return;
+
 	if (animState.isPlaying) {
-		mAnimCurrentTicks = mAnimCurrentTicks + mAnimTicksPerSecond * deltaTime * animState.playingSpeed;
+		mAnimCurrentTicks += deltaTime * mAnimTicksPerSecond * animState.playingSpeed;
+		if (mAnimCurrentTicks >= mAnimDurationTicks) {
+			mAnimCurrentTicks = fmod(mAnimCurrentTicks, mAnimDurationTicks);
+		}
 	}
 
-	if (animState.isLooping) {
-		mAnimCurrentTicks = fmod(mAnimCurrentTicks, mAnimDurationTicks);
-	}
-	else {
-		mAnimCurrentTicks = std::fmin(mAnimCurrentTicks, mAnimDurationTicks - 0.01f); // Setting exact value leads to broken model due to decimal error, substract some small value
-	}
-
-	if (mCurrentAnimIdx != animState.currentAnimIdx) {
-		SetCurrentAnimation(animState.currentAnimIdx);
-	}
 	animState.playingTime = mAnimCurrentTicks / mAnimTicksPerSecond;
 	animState.currentAnimDuration = mAnimDurationTicks / mAnimTicksPerSecond;
 	
-	UpdateBoneMatrices_internal(scene->mRootNode, aiMatrix4x4(), animState);
+	UpdateBoneMatrices_internal(scene->mRootNode, DirectX::XMMatrixIdentity(), animState);
 }
 
-void ModelImporter::UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4& parentTransform, const ModelViewer::AnimState& animState) {
+void ModelImporter::UpdateBoneMatrices_internal(aiNode* pNode, const DirectX::XMMATRIX& parentTransform, const ModelViewer::AnimState& animState) {
 	std::string nodeName = pNode->mName.C_Str();
-	aiMatrix4x4 nodeTransform = pNode->mTransformation;
-	// このノードに対応するアニメーションチャンネルがあれば補間行列を取得
-	const aiNodeAnim* pNodeAnim = node_anim_map[nodeName];
-	if (pNodeAnim && !animState.showBindPose) {
-		nodeTransform = InterpolateTransform(pNodeAnim, mAnimCurrentTicks);
+	
+	DirectX::XMMATRIX nodeTransform;
+	if (node_anim_map.count(nodeName) && !animState.showBindPose) {
+		nodeTransform = InterpolateTransform(node_anim_map[nodeName], (float)mAnimCurrentTicks);
+	} else {
+		nodeTransform = ConvertFbxMatrix(pNode->mTransformation);
 	}
 
-	// 親と掛け合わせてこのノードのグローバル行列
-	aiMatrix4x4 globalTransform = parentTransform * nodeTransform;
-	// 
+	// nodeT * parentT (転置済み行列の乗算順序)
+	DirectX::XMMATRIX globalTransform = DirectX::XMMatrixMultiply(nodeTransform, parentTransform);
+
 	if (node_bone_map.count(nodeName)) {
 		unsigned int boneIndex = node_bone_map[nodeName];
-		// 実際の座標にはboneOffsets -> globalTransform -> globalInverseTransformの順にかかる。
-		// 頂点をvとすると, 
-		// boneOffsetsはvをモデル空間からボーン空間へtransform
-		// globalTransformは親ボーンから蓄積された（現在のアニメーション再生時間を考慮）transform
-		// globalInverseTransformはモデル全体にかかってるtransformを打ち消す（ワールド座標系で扱いやすく？）
-		boneMatrices[boneIndex] = ConvertFbxMatrix(globalInverseTransform * globalTransform * boneOffsets[boneIndex]);
+		// OffsetT * GlobalT
+		boneMatrices[boneIndex] = DirectX::XMMatrixMultiply(boneOffsets[boneIndex], globalTransform);
 	}
 
 	for (unsigned int i = 0; i < pNode->mNumChildren; ++i) {
@@ -221,90 +221,75 @@ void ModelImporter::UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4
 	}
 }
 
-aiMatrix4x4 ModelImporter::InterpolateTransform(const aiNodeAnim* pNodeAnim, float animationTime) {
-	//if(pNodeAnim->mNumPositionKeys < 2) {}
+DirectX::XMMATRIX ModelImporter::InterpolateTransform(const aiNodeAnim* pNodeAnim, float animationTime) {
+	aiVector3D interpolatedPos(0, 0, 0);
+	aiQuaternion interpolatedRot(1, 0, 0, 0);
+	aiVector3D interpolatedScale(1, 1, 1);
 
-	aiVector3D interpolatedPos, interpolatedScale;
-	aiQuaternion interpolatedRot;
 	// Interpolate position
-	if(pNodeAnim->mNumPositionKeys > 1) {
-		// 1. 指定したアニメーション時間から、見るべきキーフレームを決定
+	if (pNodeAnim->mNumPositionKeys > 0) {
 		unsigned int targetPosKeyIdx = 0;
-		for (unsigned int i = 0; i < pNodeAnim->mNumPositionKeys - 1; ++i) {
-			if (animationTime < pNodeAnim->mPositionKeys[i + 1].mTime) {
-				targetPosKeyIdx = i;
-				break;
+		if (pNodeAnim->mNumPositionKeys > 1) {
+			for (unsigned int i = 0; i < pNodeAnim->mNumPositionKeys - 1; ++i) {
+				if (animationTime < pNodeAnim->mPositionKeys[i + 1].mTime) {
+					targetPosKeyIdx = i;
+					break;
+				}
 			}
+			float t1 = (float)pNodeAnim->mPositionKeys[targetPosKeyIdx].mTime;
+			float t2 = (float)pNodeAnim->mPositionKeys[targetPosKeyIdx + 1].mTime;
+			float factor = (animationTime - t1) / (t2 - t1);
+			interpolatedPos = pNodeAnim->mPositionKeys[targetPosKeyIdx].mValue + (pNodeAnim->mPositionKeys[targetPosKeyIdx + 1].mValue - pNodeAnim->mPositionKeys[targetPosKeyIdx].mValue) * factor;
+		} else {
+			interpolatedPos = pNodeAnim->mPositionKeys[0].mValue;
 		}
-
-		// 2. 補間係数を計算
-		float t1 = (float)pNodeAnim->mPositionKeys[targetPosKeyIdx].mTime;
-		float t2 = (float)pNodeAnim->mPositionKeys[targetPosKeyIdx + 1].mTime;
-		float factor = (animationTime - t1) / (t2 - t1);
-
-		// 3. 補間計算
-		// ----- Lerp to position -----
-		aiVector3D startPos = pNodeAnim->mPositionKeys[targetPosKeyIdx].mValue;
-		aiVector3D endPos = pNodeAnim->mPositionKeys[targetPosKeyIdx + 1].mValue;
-		interpolatedPos = startPos + (endPos - startPos) * float(factor);
 	}
 
 	// Interpolate scaling
-	if(pNodeAnim->mNumScalingKeys > 1) {
-		// 1. 指定したアニメーション時間から、見るべきキーフレームを決定
+	if (pNodeAnim->mNumScalingKeys > 0) {
 		unsigned int targetScaleKeyIdx = 0;
-		for (unsigned int i = 0; i < pNodeAnim->mNumScalingKeys - 1; ++i) {
-			if (animationTime < pNodeAnim->mScalingKeys[i + 1].mTime) {
-				targetScaleKeyIdx = i;
-				break;
+		if (pNodeAnim->mNumScalingKeys > 1) {
+			for (unsigned int i = 0; i < pNodeAnim->mNumScalingKeys - 1; ++i) {
+				if (animationTime < pNodeAnim->mScalingKeys[i + 1].mTime) {
+					targetScaleKeyIdx = i;
+					break;
+				}
 			}
+			float t1 = (float)pNodeAnim->mScalingKeys[targetScaleKeyIdx].mTime;
+			float t2 = (float)pNodeAnim->mScalingKeys[targetScaleKeyIdx + 1].mTime;
+			float factor = (animationTime - t1) / (t2 - t1);
+			interpolatedScale = pNodeAnim->mScalingKeys[targetScaleKeyIdx].mValue + (pNodeAnim->mScalingKeys[targetScaleKeyIdx + 1].mValue - pNodeAnim->mScalingKeys[targetScaleKeyIdx].mValue) * factor;
+		} else {
+			interpolatedScale = pNodeAnim->mScalingKeys[0].mValue;
 		}
-
-		// 2. 補間係数を計算
-		float t1 = (float)pNodeAnim->mScalingKeys[targetScaleKeyIdx].mTime;
-		float t2 = (float)pNodeAnim->mScalingKeys[targetScaleKeyIdx + 1].mTime;
-		float factor = (animationTime - t1) / (t2 - t1);
-
-		// ----- Lerp to scale -----
-		aiVector3D startScale = pNodeAnim->mScalingKeys[targetScaleKeyIdx].mValue;
-		aiVector3D endScale = pNodeAnim->mScalingKeys[targetScaleKeyIdx + 1].mValue;
-		interpolatedScale = startScale + (endScale - startScale) * float(factor);
 	}
 
 	// Interpolate rotation
-	if(pNodeAnim->mNumRotationKeys > 1) {
-		// 1. 指定したアニメーション時間から、見るべきキーフレームを決定
+	if (pNodeAnim->mNumRotationKeys > 0) {
 		unsigned int targetRotKeyIdx = 0;
-		for (unsigned int i = 0; i < pNodeAnim->mNumRotationKeys - 1; ++i) {
-			if (animationTime < pNodeAnim->mRotationKeys[i + 1].mTime) {
-				targetRotKeyIdx = i;
-				break;
+		if (pNodeAnim->mNumRotationKeys > 1) {
+			for (unsigned int i = 0; i < pNodeAnim->mNumRotationKeys - 1; ++i) {
+				if (animationTime < pNodeAnim->mRotationKeys[i + 1].mTime) {
+					targetRotKeyIdx = i;
+					break;
+				}
 			}
+			float t1 = (float)pNodeAnim->mRotationKeys[targetRotKeyIdx].mTime;
+			float t2 = (float)pNodeAnim->mRotationKeys[targetRotKeyIdx + 1].mTime;
+			float factor = (animationTime - t1) / (t2 - t1);
+			aiQuaternion::Interpolate(interpolatedRot, pNodeAnim->mRotationKeys[targetRotKeyIdx].mValue, pNodeAnim->mRotationKeys[targetRotKeyIdx + 1].mValue, factor);
+		} else {
+			interpolatedRot = pNodeAnim->mRotationKeys[0].mValue;
 		}
-
-		// 2. 補間係数を計算
-		float t1 = (float)pNodeAnim->mRotationKeys[targetRotKeyIdx].mTime;
-		float t2 = (float)pNodeAnim->mRotationKeys[targetRotKeyIdx + 1].mTime;
-		float factor = (animationTime - t1) / (t2 - t1);
-
-		// ----- Slerp to rotation -----
-		aiQuaternion startRot = pNodeAnim->mRotationKeys[targetRotKeyIdx].mValue;
-		aiQuaternion endRot = pNodeAnim->mRotationKeys[targetRotKeyIdx + 1].mValue;
-		aiQuaternion::Interpolate(interpolatedRot, startRot, endRot, float(factor));
 	}
 
-	// 4. 変換行列を構築
-	// ----- translation -----
-	aiMatrix4x4 translationMat;
-	aiMatrix4x4::Translation(interpolatedPos, translationMat);
-	// ----- scaling -----
-	aiMatrix4x4 scalingMat;
-	aiMatrix4x4::Scaling(interpolatedScale, scalingMat);
-	// ----- rotation -----
-	aiMatrix4x4 rotationMat = aiMatrix4x4(interpolatedRot.GetMatrix());
+	// DirectX::XMMATRIX の構築
+	DirectX::XMVECTOR scale = DirectX::XMVectorSet(interpolatedScale.x, interpolatedScale.y, interpolatedScale.z, 0.0f);
+	DirectX::XMVECTOR rot = DirectX::XMVectorSet(interpolatedRot.x, interpolatedRot.y, interpolatedRot.z, interpolatedRot.w);
+	DirectX::XMVECTOR pos = DirectX::XMVectorSet(interpolatedPos.x, interpolatedPos.y, interpolatedPos.z, 1.0f);
 
-	// Assimpは右からかける
-	return translationMat * rotationMat * scalingMat;
+	// アフィントランスフォーム行列の構築（DirectXMath）
+	return DirectX::XMMatrixAffineTransformation(scale, DirectX::XMVectorZero(), rot, pos);
 }
 
 DirectX::XMMATRIX ModelImporter::ConvertFbxMatrix(const aiMatrix4x4& src)
