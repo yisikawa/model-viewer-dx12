@@ -1,79 +1,78 @@
 #include "ModelImporter.h"
 
-// ControlPoints = 頂点バッファ、 PolugonVertexCount = 頂点座標？
 void ModelImporter::LoadMesh(aiMesh* mesh) {
 	std::string mesh_name = mesh->mName.C_Str();
 	std::cout << "Load " << mesh_name << " Data" << std::endl;
-	{ // 1. 頂点インデックスの読み込み
-		for (unsigned int f = 0; f < mesh->mNumFaces; ++f) {
-			aiFace& face = mesh->mFaces[f];
-			// fbxは右手系なのでdxではポリゴン生成を逆に
-			mesh_indices[mesh_name].push_back(face.mIndices[2]);
-			mesh_indices[mesh_name].push_back(face.mIndices[1]);
-			mesh_indices[mesh_name].push_back(face.mIndices[0]);
-		}
-	}
-
-	{ // 2. 頂点情報の読み込み: pos, normal, uv
-		std::vector<ModelViewer::Vertex> vertices;
-		for (unsigned int v = 0; v < mesh->mNumVertices; ++v) {
-			ModelViewer::Vertex vert{};
-			auto p = mesh->mVertices[v];
-			vert.pos = { p.x, p.y, p.z };
-
+	// 1. 頂点情報の読み込み: pos, normal, uv
+	std::vector<ModelViewer::Vertex> vertices;
+	for (unsigned int v = 0; v < mesh->mNumVertices; ++v) {
+		ModelViewer::Vertex vert{};
+		auto p = mesh->mVertices[v];
+		vert.pos = { p.x, p.y, p.z };
+		if (mesh->HasNormals()) {
 			auto n = mesh->mNormals[v];
 			vert.normal = { n.x, n.y, n.z };
-
-			if (mesh->HasTextureCoords(0)) {
-				auto uv = mesh->mTextureCoords[0][v];
-				vert.uv = { uv.x, uv.y };
-			}
-			vertices.push_back(vert);
 		}
-		mesh_vertices[mesh_name] = vertices;
+		if (mesh->HasTextureCoords(0)) {
+			auto uv = mesh->mTextureCoords[0][v];
+			vert.uv = { uv.x, uv.y };
+		}
+		vertices.push_back(vert);
+	}
+	mesh_vertices[mesh_name] = vertices;
+
+
+ // 2. 頂点インデックスの読み込み
+	for (unsigned int f = 0; f < mesh->mNumFaces; ++f) {
+		aiFace& face = mesh->mFaces[f];
+		for (unsigned int ind = 0; ind < face.mNumIndices; ++ind) {
+			mesh_indices[mesh_name].push_back(face.mIndices[ind]);
+		}
 	}
 
-	{ // 3. 頂点情報の読み込み: weight, boneid
-		auto AddBoneInfo = [](ModelViewer::Vertex& v, int boneid, float weight) {
-			if (v.weight[0] < weight) {
-				v.weight[1] = v.weight[0];
-				v.boneid[1] = v.boneid[0];
-				v.weight[0] = weight;
-				v.boneid[0] = boneid;
-			}
-			else if (v.weight[1] < weight) {
-				v.weight[1] = weight;
-				v.boneid[1] = boneid;
-			}
-			};
 
-		// boneid, weight
-		for (unsigned int b = 0; b < mesh->mNumBones; ++b) {
-			aiBone* bone = mesh->mBones[b];
-			std::string boneName = bone->mName.C_Str();
+// 3. 頂点情報の読み込み: weight, boneid
+	auto AddBoneInfo = [](ModelViewer::Vertex& v, int boneid, float weight) {
+
+		if (v.weight[0] < weight) {
+			v.weight[1] = v.weight[0];
+			v.boneid[1] = v.boneid[0];
+			v.weight[0] = weight;
+			v.boneid[0] = boneid;
+		}
+		else if (v.weight[1] < weight) {
+			v.weight[1] = weight;
+			v.boneid[1] = boneid;
+		}
+	};
+
+	// boneid, weight
+	for (unsigned int i = 0; i < mesh->mNumBones; ++i) {
+		aiBone* bone = mesh->mBones[i];
+		std::string boneName = bone->mName.C_Str();
 			
-			unsigned int boneIndex;
-			// [改善] ボーン名ですでに登録されているか確認
-			if (node_bone_map.count(boneName)) {
-				// 登録済みならそのインデックスを使用
-				boneIndex = node_bone_map[boneName];
-			} else {
-				// 未登録なら新しいインデックス（現在のマップサイズ）を割り当て
-				boneIndex = (unsigned int)node_bone_map.size();
-				node_bone_map[boneName] = boneIndex;
-				boneOffsets[boneIndex] = bone->mOffsetMatrix;
-			}
+		unsigned int boneIndex;
+		// [改善] ボーン名ですでに登録されているか確認
+		if (node_bone_map.count(boneName)) {
+			// 登録済みならそのインデックスを使用
+			boneIndex = node_bone_map[boneName];
+		} else {
+			// 未登録なら新しいインデックス（現在のマップサイズ）を割り当て
+			boneIndex = (unsigned int)node_bone_map.size();
+			node_bone_map[boneName] = boneIndex;
+			boneOffsets[boneIndex] = bone->mOffsetMatrix;
+		}
 
-			std::cout << "Mesh: " << mesh_name << " | Bone: " << boneName << " -> Global Index: " << boneIndex << std::endl;
+		std::cout << "Mesh: " << mesh_name << " | Bone: " << boneName << " -> Global Index: " << boneIndex << std::endl;
 
-			for (unsigned int wid = 0; wid < bone->mNumWeights; ++wid) {
-				aiVertexWeight weight = bone->mWeights[wid];
-				int vertexId = weight.mVertexId;
-				// 頂点にグローバルなボーンIDを書き込む
-				AddBoneInfo(mesh_vertices[mesh_name][vertexId], boneIndex, weight.mWeight);
-			}
+		for (unsigned int j = 0; j < bone->mNumWeights; ++j) {
+			aiVertexWeight weight = bone->mWeights[j];
+			int vertexId = weight.mVertexId;
+			// 頂点にグローバルなボーンIDを書き込む
+			AddBoneInfo(mesh_vertices[mesh_name][vertexId], boneIndex, weight.mWeight);
 		}
 	}
+
 
 	// meshとマテリアルの結び付け。メッシュ単位で描画するので、そこからマテリアルが取れればさらにそこからテクスチャが取れて、無事UVマッピング。
 	aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
@@ -110,27 +109,18 @@ void ModelImporter::LoadMesh(aiMesh* mesh) {
 }
 
 bool ModelImporter::CreateModelImporter(const std::string& inFbxFileName) {
-	// ボーン更新時等にscene->mRootNoteが必要になるのでsceneが破棄されないようにimporterをメンバにしている
-	scene = importer.ReadFile(inFbxFileName, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace);
+	
+	scene = importer.ReadFile(inFbxFileName, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace | aiProcess_MakeLeftHanded | aiProcess_FlipWindingOrder);
 
 	if (!scene) {
 		std::cout << importer.GetErrorString() << std::endl;
 		return false;
 	}
 
-	{// Animation Preparation
-		// 上方向がYかZかなど、Assimpはモデリングソフトの差異をmRootNode->mTransformationに変換として集約するが、実際の座標計算時には、その変換を逆行列で除去する
-		globalInverseTransform = scene->mRootNode->mTransformation.Inverse();
-		// 
-		// AnimStack（アニメーション情報）はシーンのNodeの木構造の外側に独立して存在している。
-		// 各AnimStackには、「どのNode（手とか足とか）を動かすか」という情報があり、これでモデルとの関連付けを行っている。
-		// pAnim->mChannels(aiNodeAnim**)にはT, R, Sすべてのキーフレーム情報が入っている。FBX内部ではそれらはばらばらだがAssimpがいい感じに集めてくれる。
-		// (各aiNodeAnimはmPositionKeys, mRotationKeys, mScalingKeysがあり、ここから変換行列を作る)
-		// 各aiNodeがどのaiNodeAnimに影響を受けるかをstd::map<string, aiNodeAnim*>に保管しておき、後でscene->mRootNodeから再帰的にノードを走査して、各フレームでの変換行列を構築する必要がある
-		if (scene->mNumAnimations > 0) {
-			SetCurrentAnimation(0);
-		}
+	if (scene->mNumAnimations > 0) {
+		SetCurrentAnimation(0);
 	}
+
 
 	int meshCount = scene->mNumMeshes;
 	for (int i = 0; i < meshCount; ++i) {
@@ -199,7 +189,7 @@ void ModelImporter::UpdateBoneMatrices(float deltaTime, ModelViewer::AnimState &
 	animState.playingTime = mAnimCurrentTicks / mAnimTicksPerSecond;
 	animState.currentAnimDuration = mAnimDurationTicks / mAnimTicksPerSecond;
 	
-	UpdateBoneMatrices_internal(scene->mRootNode, scene->mRootNode->mTransformation, animState);
+	UpdateBoneMatrices_internal(scene->mRootNode, aiMatrix4x4(), animState);
 }
 
 void ModelImporter::UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4& parentTransform, const ModelViewer::AnimState& animState) {
