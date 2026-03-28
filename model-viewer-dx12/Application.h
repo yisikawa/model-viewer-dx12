@@ -117,6 +117,9 @@ namespace ModelViewer {
 		float m_cameraPitch = 0.08f; // 約 13.0f, -30.0f の初期値に合わせる
 		float m_cameraDistance = 30.1f;
 		DirectX::XMFLOAT3 m_cameraTarget = { 0.0f, 10.5f, 0.0f };
+
+		float m_lightYaw = 0.75f; // 約 45度
+		float m_lightPitch = 0.75f; // 約 45度
 	};
 
 }

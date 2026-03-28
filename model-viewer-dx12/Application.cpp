@@ -288,9 +288,17 @@ void Application::CreateCBV() {
 	_vMatrix = DirectX::XMMatrixLookAtLH(eyePos, targetPos, upVec);
 	_pMatrix = DirectX::XMMatrixPerspectiveFovLH(DirectX::XM_PIDIV2, static_cast<float>(windowManager->GetWidth()) / static_cast<float>(windowManager->GetHeight()), 1.0f, 200.0f);
 
-	DirectX::XMVECTOR lightVec = { -1.0f, -1.0f, -1.0f };
 	DirectX::XMVECTOR planeVec = { 0.0f, 1.0f, 0.0f, 0.0f };
-	auto lightPos = targetPos - DirectX::XMVector3Normalize(lightVec) * DirectX::XMVector3Length(DirectX::XMVectorSubtract(targetPos, eyePos)).m128_f32[0];
+
+	// 光源位置・方向の計算 (初期値)
+	float lightDist = m_cameraDistance;
+	DirectX::XMVECTOR lightPos = DirectX::XMVectorSet(
+		lightDist * cosf(m_lightPitch) * sinf(m_lightYaw),
+		lightDist * sinf(m_lightPitch),
+		-lightDist * cosf(m_lightPitch) * cosf(m_lightYaw),
+		1.0f
+	) + targetPos;
+	DirectX::XMVECTOR lightDirVec = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(lightPos, targetPos));
 
 	_transformCB = std::make_unique<TDX12ConstantBuffer>(sizeof(TransformMatrices), _graphicsDevice->GetDevice());
 	_sceneCB = std::make_unique<TDX12ConstantBuffer>(sizeof(SceneMatrices), _graphicsDevice->GetDevice());
@@ -302,13 +310,12 @@ void Application::CreateCBV() {
 	_sceneCB->Map((void**)&_mapSceneMatrix);
 	_mapSceneMatrix->view = _vMatrix;
 	_mapSceneMatrix->proj = _pMatrix;
-	_mapSceneMatrix->lightViewProj = DirectX::XMMatrixLookAtLH(lightPos, targetPos, upVec) * DirectX::XMMatrixOrthographicLH(40, 40, 1.0f, 100.0f); 
-	_mapSceneMatrix->eye = DirectX::XMFLOAT3(eyePos.m128_f32[0], eyePos.m128_f32[1], eyePos.m128_f32[2]);
+	_mapSceneMatrix->lightViewProj = DirectX::XMMatrixLookAtLH(lightPos, targetPos, upVec) * DirectX::XMMatrixOrthographicLH(40.0f, 40.0f, 1.0f, 200.0f); 
+	DirectX::XMStoreFloat3(&_mapSceneMatrix->eye, eyePos);
 	_mapSceneMatrix->pad_scene0 = 0.0f;
-	DirectX::XMVECTOR lightDirVec = DirectX::XMVector3Normalize(DirectX::XMVectorNegate(lightVec));
 	DirectX::XMStoreFloat3(&_mapSceneMatrix->lightDirection, lightDirVec);
 	_mapSceneMatrix->useFlatShading = 0;
-	_mapSceneMatrix->shadow = DirectX::XMMatrixShadow(planeVec, -lightVec);
+	_mapSceneMatrix->shadow = DirectX::XMMatrixShadow(planeVec, lightDirVec);
 
 	_transformCBVHandle = g_resourceDescriptorHeapWrapper->AddCBV(_graphicsDevice->GetDevice(), _transformCB->m_constantBuffer);
 	_sceneCBVHandle = g_resourceDescriptorHeapWrapper->AddCBV(_graphicsDevice->GetDevice(), _sceneCB->m_constantBuffer);
@@ -512,21 +519,24 @@ void Application::Run() {
 		if (ImGui::IsMouseDown(0) && !ImGui::GetIO().WantCaptureMouse) {
 			auto delta = ImGui::GetIO().MouseDelta;
 			if (ImGui::GetIO().KeyShift) {
-				// 平行移動（パン）
+				// カメラ平行移動（パン）
 				float sensitivity = 0.05f;
-				// ビュー行列から右・上ベクトルを取得（LH)
 				DirectX::XMVECTOR right = DirectX::XMVectorSet(_vMatrix.r[0].m128_f32[0], _vMatrix.r[1].m128_f32[0], _vMatrix.r[2].m128_f32[0], 0);
 				DirectX::XMVECTOR up = DirectX::XMVectorSet(_vMatrix.r[0].m128_f32[1], _vMatrix.r[1].m128_f32[1], _vMatrix.r[2].m128_f32[1], 0);
-
 				DirectX::XMVECTOR translation = (right * -delta.x + up * delta.y) * sensitivity;
 				DirectX::XMVECTOR newTarget = DirectX::XMLoadFloat3(&m_cameraTarget) + translation;
 				DirectX::XMStoreFloat3(&m_cameraTarget, newTarget);
 			}
+			else if (ImGui::GetIO().KeyCtrl) {
+				// 光源回転処理
+				m_lightYaw -= delta.x * 0.005f;
+				m_lightPitch += delta.y * 0.005f;
+				m_lightPitch = std::clamp(m_lightPitch, -DirectX::XM_PIDIV2 + 0.01f, DirectX::XM_PIDIV2 - 0.01f);
+			}
 			else {
-				// 回転処理
+				// カメラ回転処理
 				m_cameraYaw -= delta.x * 0.005f;
 				m_cameraPitch += delta.y * 0.005f;
-				// ジンバルロック防止
 				m_cameraPitch = std::clamp(m_cameraPitch, -DirectX::XM_PIDIV2 + 0.01f, DirectX::XM_PIDIV2 - 0.01f);
 			}
 		}
@@ -541,20 +551,37 @@ void Application::Run() {
 		}
 
 		DirectX::XMVECTOR targetPos = DirectX::XMLoadFloat3(&m_cameraTarget);
+		
+		// カメラ位置・ビュー行列更新
 		DirectX::XMVECTOR eyePos = DirectX::XMVectorSet(
 			m_cameraDistance * cosf(m_cameraPitch) * sinf(m_cameraYaw),
 			m_cameraDistance * sinf(m_cameraPitch),
 			-m_cameraDistance * cosf(m_cameraPitch) * cosf(m_cameraYaw),
 			1.0f
 		) + targetPos;
-
 		_vMatrix = DirectX::XMMatrixLookAtLH(eyePos, targetPos, DirectX::XMVectorSet(0, 1, 0, 0));
 
+		// 光源位置・方向・シャドウ更新
+		float lightDist = m_cameraDistance;
+		DirectX::XMVECTOR lightPos = DirectX::XMVectorSet(
+			lightDist * cosf(m_lightPitch) * sinf(m_lightYaw),
+			lightDist * sinf(m_lightPitch),
+			-lightDist * cosf(m_lightPitch) * cosf(m_lightYaw),
+			1.0f
+		) + targetPos;
+		DirectX::XMVECTOR lightDirVec = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(lightPos, targetPos));
+		DirectX::XMVECTOR upVec = { 0.0f, 1.0f, 0.0f };
+		DirectX::XMVECTOR planeVec = { 0.0f, 1.0f, 0.0f, 0.0f };
+
+		// 定数バッファの更新
 		if (_mapTransformMatrix) _mapTransformMatrix->world = DirectX::XMMatrixScaling(m_modelScale, m_modelScale, m_modelScale);
 		_mapSceneMatrix->view = _vMatrix; 
 		_mapSceneMatrix->proj = _pMatrix;
 		DirectX::XMStoreFloat3(&_mapSceneMatrix->eye, eyePos);
 		_mapSceneMatrix->useFlatShading = m_animState.useFlatShading ? 1 : 0;
+		_mapSceneMatrix->lightViewProj = DirectX::XMMatrixLookAtLH(lightPos, targetPos, upVec) * DirectX::XMMatrixOrthographicLH(40.0f * (m_modelScale / 5.0f + 1.0f), 40.0f * (m_modelScale / 5.0f + 1.0f), 1.0f, 200.0f * (m_modelScale / 5.0f + 1.0f));
+		DirectX::XMStoreFloat3(&_mapSceneMatrix->lightDirection, lightDirVec);
+		_mapSceneMatrix->shadow = DirectX::XMMatrixShadow(planeVec, lightDirVec);
 
 		auto cmd = _graphicsDevice->GetCommandList();
 		cmd->RSSetViewports(1, &vp); cmd->RSSetScissorRects(1, &sr);

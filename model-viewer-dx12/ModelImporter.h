@@ -23,8 +23,8 @@ private:
 		auto idx = path.rfind(L'.');
 		return path.substr(idx + 1, path.length() - idx - 1);
 	}
-	void UpdateBoneMatrices_internal(aiNode* pNode, const aiMatrix4x4& parentTransform, const ModelViewer::AnimState& animState);
-	static aiMatrix4x4 InterpolateTransform(const aiNodeAnim* pNodeAnim, float animationTime);
+	void UpdateBoneMatrices_internal(aiNode* pNode, const DirectX::XMMATRIX& parentTransform, const ModelViewer::AnimState& animState);
+	DirectX::XMMATRIX InterpolateTransform(const aiNodeAnim* pNodeAnim, float animationTime);
 
 	Assimp::Importer importer;
 	const aiScene* scene;
@@ -57,9 +57,9 @@ public:
 	};
 	// bone information
 	BoneInfo bones[256] = {};
-	aiMatrix4x4 boneOffsets[256] = {};
+	DirectX::XMMATRIX boneOffsets[256] = {};
 	DirectX::XMMATRIX boneMatrices[256] = {};
-	aiMatrix4x4 globalInverseTransform;
+	DirectX::XMMATRIX globalInverseTransform;
 	// Animation
 	DirectX::XMMATRIX ConvertFbxMatrix(const aiMatrix4x4& src);
 	void UpdateBoneMatrices(float deltaTime, ModelViewer::AnimState &animState);
