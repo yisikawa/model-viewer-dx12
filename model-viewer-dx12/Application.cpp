@@ -103,7 +103,7 @@ void Application::CreateDepthStencilView() {
 		&depthHeapProp,
 		D3D12_HEAP_FLAG_NONE,
 		&depthResDesc,
-		D3D12_RESOURCE_STATE_DEPTH_WRITE,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
 		&depthClearValue,
 		IID_PPV_ARGS(_lightDepthBuffer.ReleaseAndGetAddressOf())));
 
@@ -566,6 +566,27 @@ void Application::Run() {
 				cmd->ResourceBarrier((UINT)barriers.size(), barriers.data());
 			}
 		}
+
+		// --- Shadow Pass ---
+		auto barrierShadowWrite = CD3DX12_RESOURCE_BARRIER::Transition(_lightDepthBuffer.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		cmd->ResourceBarrier(1, &barrierShadowWrite);
+
+		D3D12_CPU_DESCRIPTOR_HANDLE shadowDsv = _dsvHeap->GetCPUDescriptorHandleForHeapStart();
+		shadowDsv.ptr += _graphicsDevice->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+		cmd->ClearDepthStencilView(shadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+		cmd->OMSetRenderTargets(0, nullptr, false, &shadowDsv);
+
+		// シャドウパス用のパイプラインとルートシグネチャ設定
+		cmd->SetGraphicsRootSignature(m_rootSignature->GetRootSignaturePointer());
+		cmd->SetPipelineState(_shadowPipelineState.Get());
+		cmd->SetGraphicsRootDescriptorTable(0, _transformCBVHandle); // b0, b1を含む
+
+		if (_model) _model->Draw(cmd);
+
+		auto barrierShadowRead = CD3DX12_RESOURCE_BARRIER::Transition(_lightDepthBuffer.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		cmd->ResourceBarrier(1, &barrierShadowRead);
+		// --- End Shadow Pass ---
 
 		auto barrierRT = CD3DX12_RESOURCE_BARRIER::Transition(_postProcessResource.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		cmd->ResourceBarrier(1, &barrierRT);
