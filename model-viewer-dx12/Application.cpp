@@ -312,7 +312,7 @@ void Application::CreateCBV() {
 	_mapSceneMatrix->proj = _pMatrix;
 	_mapSceneMatrix->lightViewProj = DirectX::XMMatrixLookAtLH(lightPos, targetPos, upVec) * DirectX::XMMatrixOrthographicLH(40.0f, 40.0f, 1.0f, 200.0f); 
 	DirectX::XMStoreFloat3(&_mapSceneMatrix->eye, eyePos);
-	_mapSceneMatrix->pad_scene0 = 0.0f;
+	_mapSceneMatrix->specularStrength = m_animState.specularStrength;
 	DirectX::XMStoreFloat3(&_mapSceneMatrix->lightDirection, lightDirVec);
 	_mapSceneMatrix->useFlatShading = 0;
 	_mapSceneMatrix->shadow = DirectX::XMMatrixShadow(planeVec, lightDirVec);
@@ -354,6 +354,7 @@ void Application::DrawImGui() {
 	ImGui::Checkbox("Show Bind Pose", &m_animState.showBindPose);
 	ImGui::Checkbox("Show Wireframe", &m_animState.showWireframe);
 	ImGui::Checkbox("Use Flat Shading", &m_animState.useFlatShading);
+	ImGui::SliderFloat("Specular Strength", &m_animState.specularStrength, 0.0f, 1.0f);
 	ImGui::SliderFloat("Playing Time", &m_animState.playingTime, 0.f, m_animState.currentAnimDuration);
 	if (m_animState.sceneAnimCount > 0) {
 		if (ImGui::BeginCombo("Selected Animation", m_animState.animationNames[m_animState.currentAnimIdx].c_str())) {
@@ -579,6 +580,7 @@ void Application::Run() {
 		_mapSceneMatrix->proj = _pMatrix;
 		DirectX::XMStoreFloat3(&_mapSceneMatrix->eye, eyePos);
 		_mapSceneMatrix->useFlatShading = m_animState.useFlatShading ? 1 : 0;
+		_mapSceneMatrix->specularStrength = m_animState.specularStrength;
 		_mapSceneMatrix->lightViewProj = DirectX::XMMatrixLookAtLH(lightPos, targetPos, upVec) * DirectX::XMMatrixOrthographicLH(40.0f * (m_modelScale / 5.0f + 1.0f), 40.0f * (m_modelScale / 5.0f + 1.0f), 1.0f, 200.0f * (m_modelScale / 5.0f + 1.0f));
 		DirectX::XMStoreFloat3(&_mapSceneMatrix->lightDirection, lightDirVec);
 		_mapSceneMatrix->shadow = DirectX::XMMatrixShadow(planeVec, lightDirVec);

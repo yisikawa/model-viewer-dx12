@@ -24,7 +24,7 @@ namespace ModelViewer {
 		DirectX::XMMATRIX lightViewProj;
 		DirectX::XMMATRIX shadow;
 		DirectX::XMFLOAT3 eye;
-		float pad_scene0;
+		float specularStrength;
 		DirectX::XMFLOAT3 lightDirection;
 		uint32_t useFlatShading;
 	};
@@ -78,6 +78,7 @@ namespace ModelViewer {
 		float	currentAnimDuration = 0.;
 		float	playingTime = 0.;
 		float	playingSpeed = 1.;
+		float	specularStrength = 0.5f; // 鏡面反射強度スライダー用
 		bool	isPlaying = true;
 		bool	isLooping = true;
 		bool	showBindPose = false;

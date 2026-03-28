@@ -25,7 +25,7 @@ cbuffer cbuff1 : register(b1) {
 	matrix lightViewProj;
 	matrix shadow;
 	float3 eye;
-	float pad_scene0;
+	float specularStrength;
 	float3 lightDirection;
 	uint useFlatShading;
 };
@@ -85,7 +85,7 @@ float4 MainPS(in VS_OUT input) : SV_TARGET
     
     // ライティングとテクスチャ、自己影の合成
     float4 finalColor = float4(lighting, lighting, lighting, 1.0) * texColor;
-    finalColor.rgb += Specular;
+    finalColor.rgb += Specular * specularStrength;
     finalColor.rgb *= shadowWeight;
     finalColor.a = texColor.a;
     
