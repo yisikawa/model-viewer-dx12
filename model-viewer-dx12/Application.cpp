@@ -351,7 +351,10 @@ void Application::DrawImGui() {
 	if (m_animState.sceneAnimCount > 0) {
 		if (ImGui::BeginCombo("Selected Animation", m_animState.animationNames[m_animState.currentAnimIdx].c_str())) {
 			for (int i = 0; i < (int)m_animState.animationNames.size(); ++i) {
-				if (ImGui::Selectable(m_animState.animationNames[i].c_str(), i == m_animState.currentAnimIdx)) m_animState.currentAnimIdx = i;
+				if (ImGui::Selectable(m_animState.animationNames[i].c_str(), i == m_animState.currentAnimIdx)) {
+					m_animState.currentAnimIdx = i;
+					if (_modelImporter) _modelImporter->SetCurrentAnimation(i);
+				}
 			}
 			ImGui::EndCombo();
 		}
