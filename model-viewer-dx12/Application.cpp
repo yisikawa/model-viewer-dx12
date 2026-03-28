@@ -288,7 +288,7 @@ void Application::CreateCBV() {
 	_vMatrix = DirectX::XMMatrixLookAtLH(eyePos, targetPos, upVec);
 	_pMatrix = DirectX::XMMatrixPerspectiveFovLH(DirectX::XM_PIDIV2, static_cast<float>(windowManager->GetWidth()) / static_cast<float>(windowManager->GetHeight()), 1.0f, 200.0f);
 
-	DirectX::XMVECTOR lightVec = { 1.0f, -1.0f, 1.0f };
+	DirectX::XMVECTOR lightVec = { -1.0f, -1.0f, -1.0f };
 	DirectX::XMVECTOR planeVec = { 0.0f, 1.0f, 0.0f, 0.0f };
 	auto lightPos = targetPos - DirectX::XMVector3Normalize(lightVec) * DirectX::XMVector3Length(DirectX::XMVectorSubtract(targetPos, eyePos)).m128_f32[0];
 
