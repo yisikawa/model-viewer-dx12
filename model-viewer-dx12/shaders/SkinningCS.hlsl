@@ -3,9 +3,9 @@ struct Vertex
 {
     float3 pos;         float pad0;
     float3 normal;      float pad1;
-    float2 uv;
-    uint2 boneid;
-    float2 weight;      float2 pad2;
+    float2 uv;          float2 pad2;
+    uint4 boneid;
+    float4 weight;
 };
 
 StructuredBuffer<Vertex> InputVertices : register(t0);
@@ -26,7 +26,7 @@ void main( uint3 DTid : SV_DispatchThreadID )
 
     matrix boneMatrix = (matrix)0;
     float boneAllWeight = 0;
-    for (int j = 0; j < 2; j++)
+    for (int j = 0; j < 4; j++)
     {
         uint bone = v.boneid[j];
         float w = v.weight[j];
@@ -34,7 +34,11 @@ void main( uint3 DTid : SV_DispatchThreadID )
         boneMatrix += BoneMatrices[bone] * w;
         boneAllWeight += w;
     }
-    boneMatrix /= boneAllWeight;
+    if (boneAllWeight > 0) {
+        boneMatrix /= boneAllWeight;
+    } else {
+        boneMatrix = (matrix)1; // fallback to identity if no weight
+    }
 
     // 頂点と法線のスキンニング
     v.pos = mul(boneMatrix, pos).xyz;

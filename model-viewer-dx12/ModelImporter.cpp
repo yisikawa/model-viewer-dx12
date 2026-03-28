@@ -31,18 +31,14 @@ void ModelImporter::LoadMesh(aiMesh* mesh) {
 	}
 
 
-// 3. 頂点情報の読み込み: weight, boneid
+	// 3. 頂点情報の読み込み: weight, boneid
 	auto AddBoneInfo = [](ModelViewer::Vertex& v, int boneid, float weight) {
-
-		if (v.weight[0] < weight) {
-			v.weight[1] = v.weight[0];
-			v.boneid[1] = v.boneid[0];
-			v.weight[0] = weight;
-			v.boneid[0] = boneid;
-		}
-		else if (v.weight[1] < weight) {
-			v.weight[1] = weight;
-			v.boneid[1] = boneid;
+		for (int i = 0; i < 4; ++i) {
+			if (v.weight[i] == 0.0f) {
+				v.weight[i] = weight;
+				v.boneid[i] = (uint32_t)boneid;
+				break;
+			}
 		}
 	};
 

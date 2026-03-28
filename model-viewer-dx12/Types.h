@@ -8,11 +8,9 @@ namespace ModelViewer {
 	struct Vertex {
 		DirectX::XMFLOAT3 pos;			float pad0;
 		DirectX::XMFLOAT3 normal;		float pad1;
-		DirectX::XMFLOAT2 uv;
-		uint32_t boneid[2];
-		float weight[2];
-
-		float pad2[2];
+		DirectX::XMFLOAT2 uv;			float pad_uv[2];
+		uint32_t boneid[4];
+		float weight[4];
 	};
 
 	struct alignas(256) TransformMatrices {

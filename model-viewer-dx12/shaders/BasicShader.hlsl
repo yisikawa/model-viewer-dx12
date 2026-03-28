@@ -37,12 +37,12 @@ cbuffer Material : register(b1) {
 	float alpha;
 };
 
-float4 ShadowVS(in float4 pos: POSITION, in float4 normal : NORMAL, in float2 uv : TEXCOORD, in min16uint2 boneid : BONEID, in float2 weight : WEIGHT) : SV_POSITION{
+float4 ShadowVS(in float4 pos: POSITION, in float4 normal : NORMAL, in float2 uv : TEXCOORD, in float2 pad_uv : TEXCOORD1, in uint4 boneid : BONEID, in float4 weight : WEIGHT) : SV_POSITION{
     pos = mul(world, pos);
     return mul(lightViewProj, pos);
 }
 
-VS_OUT MainVS(in float4 pos : POSITION, in float3 normal : NORMAL, in float2 uv : TEXCOORD, in min16uint2 boneid : BONEID, in float2 weight : WEIGHT, in uint instanceID : SV_InstanceID)
+VS_OUT MainVS(in float4 pos : POSITION, in float3 normal : NORMAL, in float2 uv : TEXCOORD, in float2 pad_uv : TEXCOORD1, in uint4 boneid : BONEID, in float4 weight : WEIGHT, in uint instanceID : SV_InstanceID)
 {
     VS_OUT output;
     pos = mul(world, pos);
