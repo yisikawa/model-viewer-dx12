@@ -28,6 +28,17 @@ A skinned animated model rendered with:
 - basic lighting
 - shadow mapping
 
+## 操作方法
+
+### マウス操作
+- **左ドラッグ**: カメラの回転（ピッチ・ヨー）
+- **Shift + 左ドラッグ**: カメラの平行移動（パン）
+- **Ctrl + 左ドラッグ**: 光源の回転（影の方向変更）
+- **マウスホイール**: モデルの拡大・縮小（スケーリング）
+
+### モデルの読み込み
+- **File > Open**: ファイル選択ダイアログを表示して3Dモデル（FBX, glTF, OBJ, GLB, DirectXファイル(.x)等）を読み込みます。
+
 ## How to build
 
 ### 0. Requirements

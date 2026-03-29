@@ -387,7 +387,7 @@ void Application::ReleaseModelResources() {
 void Application::OpenFileDialog() {
 	IFileOpenDialog* pFileOpen;
 	if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen)))) {
-		COMDLG_FILTERSPEC rgSpec[] = { { L"Model Files", L"*.gltf;*.fbx;*.obj;*.glb" }, { L"All Files", L"*.*" } };
+		COMDLG_FILTERSPEC rgSpec[] = { { L"Model Files", L"*.gltf;*.fbx;*.obj;*.glb;*.x" }, { L"All Files", L"*.*" } };
 		pFileOpen->SetFileTypes(ARRAYSIZE(rgSpec), rgSpec);
 		if (SUCCEEDED(pFileOpen->Show(windowManager->GetHandle()))) {
 			IShellItem* pItem;
