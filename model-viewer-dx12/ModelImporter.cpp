@@ -113,7 +113,7 @@ void ModelImporter::LoadMesh(aiMesh* mesh, unsigned int meshIndex) {
 
 bool ModelImporter::CreateModelImporter(const std::string& inFbxFileName) {
 	
-	scene = importer.ReadFile(inFbxFileName, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace | aiProcess_MakeLeftHanded | aiProcess_FlipWindingOrder);
+	scene = importer.ReadFile(inFbxFileName, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace);
 
 	if (!scene) {
 		std::cout << importer.GetErrorString() << std::endl;
