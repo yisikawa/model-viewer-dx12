@@ -113,9 +113,9 @@ void ModelImporter::LoadMesh(aiMesh* mesh, unsigned int meshIndex) {
 
 bool ModelImporter::CreateModelImporter(const std::string& inFbxFileName) {
 	
-	scene = importer.ReadFile(inFbxFileName, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace);
+	scene = importer.ReadFile(inFbxFileName, aiProcess_Triangulate | aiProcess_ImproveCacheLocality | aiProcess_GenNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded);
 
-	if (!scene) {
+	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
 		std::cout << importer.GetErrorString() << std::endl;
 		return false;
 	}
@@ -123,9 +123,6 @@ bool ModelImporter::CreateModelImporter(const std::string& inFbxFileName) {
 	if (scene->mNumAnimations > 0) {
 		SetCurrentAnimation(0);
 	}
-
-	// ルートノードの逆行列計算は、初期位置のずれを避けるために現在は使用しません
-	globalInverseTransform = DirectX::XMMatrixIdentity();
 
 
 	int meshCount = scene->mNumMeshes;

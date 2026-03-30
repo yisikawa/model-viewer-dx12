@@ -59,7 +59,6 @@ public:
 	BoneInfo bones[256] = {};
 	DirectX::XMMATRIX boneOffsets[256] = {};
 	DirectX::XMMATRIX boneMatrices[256] = {};
-	DirectX::XMMATRIX globalInverseTransform;
 	// Animation
 	DirectX::XMMATRIX ConvertFbxMatrix(const aiMatrix4x4& src);
 	void UpdateBoneMatrices(float deltaTime, ModelViewer::AnimState &animState);
