@@ -112,9 +112,22 @@ void ModelImporter::LoadMesh(aiMesh* mesh, unsigned int meshIndex) {
 }
 
 bool ModelImporter::CreateModelImporter(const std::string& inFbxFileName) {
+	unsigned int flags = aiProcess_Triangulate | 
+	                     aiProcess_JoinIdenticalVertices | 
+	                     aiProcess_ImproveCacheLocality | 
+	                     aiProcess_GenNormals | 
+	                     aiProcess_CalcTangentSpace |
+						 aiProcess_FlipUVs; 
+	std::string ext = GetExtension(inFbxFileName);
+	// 小文字に変換して比較（必要に応じて）
+	for(auto &c : ext) c = tolower(c);
+	// 拡張子ごとの調整
+	if (ext == "x") {
+		scene = importer.ReadFile(inFbxFileName, flags);
+	} else {
+		scene = importer.ReadFile(inFbxFileName, flags | aiProcess_ConvertToLeftHanded);
+	}
 	
-	scene = importer.ReadFile(inFbxFileName, aiProcess_Triangulate | aiProcess_ImproveCacheLocality | aiProcess_GenNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded);
-
 	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
 		std::cout << importer.GetErrorString() << std::endl;
 		return false;
