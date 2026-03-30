@@ -34,11 +34,7 @@ void main( uint3 DTid : SV_DispatchThreadID )
         boneMatrix += BoneMatrices[bone] * w;
         boneAllWeight += w;
     }
-    if (boneAllWeight > 0) {
-        boneMatrix /= boneAllWeight;
-    } else {
-        boneMatrix = (matrix)1; // fallback to identity if no weight
-    }
+    boneMatrix /= boneAllWeight;
 
     // 頂点と法線のスキンニング
     v.pos = mul(boneMatrix, pos).xyz;
